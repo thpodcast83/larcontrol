@@ -23,7 +23,7 @@ import {
 } from 'firebase/firestore';
 import { banco } from '@/firebase';
 import type { Conta, Divida } from '@/tipos';
-import { formatarMoeda, formatarDataCurta } from '@/utils/utilFormato';
+import { formatarMoeda } from '@/utils/utilFormato';
 import { gerarPdfGenerico } from '@/utils/utilPdf';
 import { Modal } from '@/componentes/Modal';
 import {
@@ -62,6 +62,16 @@ const coresCategoria: Record<string, string> = {
   Empréstimo: 'bg-purple-500',
   Outros: 'bg-slate-500',
 };
+
+/**
+ * Função auxiliar para conversão segura de número no formato PT-BR
+ * Trata entradas como "1.250,50", "150,00" ou "100".
+ */
+function converterParaNumero(val: string): number {
+  if (!val) return 0;
+  const limpo = val.replace(/\./g, '').replace(',', '.');
+  return parseFloat(limpo) || 0;
+}
 
 export function PaginaFinancas() {
   const [contas, setContas] = useState<Conta[]>([]);
@@ -168,10 +178,12 @@ export function PaginaFinancas() {
   const salvarConta = async () => {
     if (!descricao.trim() || !valor) return;
 
+    const valorNumerico = converterParaNumero(valor);
+
     const dados = {
       descricao: descricao.trim(),
       categoria,
-      valor: parseFloat(valor.replace(',', '.')) || 0,
+      valor: valorNumerico,
       vencimento: vencimento || 'Não informado',
       status: statusConta,
       fixa,
@@ -183,8 +195,7 @@ export function PaginaFinancas() {
       await addDoc(collection(banco, 'contas'), dados);
     }
 
-    limparFormularioConta();
-    setModalContaAberto(false);
+    fecharModalConta();
   };
 
   /**
@@ -228,6 +239,11 @@ export function PaginaFinancas() {
     setFixa(false);
   };
 
+  const fecharModalConta = () => {
+    limparFormularioConta();
+    setModalContaAberto(false);
+  };
+
   /**
    * calcularDivida
    * Simula amortização de dívida usando o sistema Price (parcelas fixas).
@@ -235,11 +251,11 @@ export function PaginaFinancas() {
    * Onde: PV = valor presente, i = taxa de juros mensal, n = número de parcelas.
    */
   const calcularDivida = () => {
-    const pv = parseFloat(valorDivida.replace(',', '.')) || 0;
-    const i = (parseFloat(jurosDivida.replace(',', '.')) || 0) / 100;
-    const n = parseInt(parcelasDivida) || 0;
+    const pv = converterParaNumero(valorDivida);
+    const i = converterParaNumero(jurosDivida) / 100;
+    const n = parseInt(parcelasDivida, 10) || 0;
 
-    if (pv <= 0 || n <= 0) return;
+    if (pv <= 0 || n <= 0) return null;
 
     // Cálculo da parcela fixa (sistema Price).
     let pmt: number;
@@ -275,6 +291,10 @@ export function PaginaFinancas() {
       valorParcela: calc.pmt,
     });
 
+    fecharModalDivida();
+  };
+
+  const fecharModalDivida = () => {
     setDescDivida('');
     setValorDivida('');
     setJurosDivida('');
@@ -477,7 +497,7 @@ export function PaginaFinancas() {
                 <div className="flex-1">
                   <h3 className="font-semibold text-slate-900">{d.descricao}</h3>
                   <p className="text-sm text-slate-500 mt-0.5">
-                    {d.parcelas}x de {formatarMoeda(d.valorParcela)} • Juros: {formatarMoeda(d.jurosMensal)}%/mês
+                    {d.parcelas}x de {formatarMoeda(d.valorParcela)} • Juros: {d.jurosMensal}%/mês
                   </p>
                   <p className="text-xs text-slate-400">
                     Total: {formatarMoeda(d.valorTotal)} • Total a pagar: {formatarMoeda(d.valorParcela * d.parcelas)}
@@ -498,7 +518,7 @@ export function PaginaFinancas() {
       {/* === Modal de conta === */}
       <Modal
         aberto={modalContaAberto}
-        onFechar={() => setModalContaAberto(false)}
+        onFechar={fecharModalConta}
         titulo={editandoContaId ? 'Editar conta' : 'Adicionar conta'}
       >
         <div className="space-y-4">
@@ -531,7 +551,7 @@ export function PaginaFinancas() {
               <input
                 type="text"
                 inputMode="decimal"
-                placeholder="Ex: 150.00"
+                placeholder="Ex: 150,00"
                 value={valor}
                 onChange={(e) => setValor(e.target.value)}
                 className="campo-entrada"
@@ -582,7 +602,11 @@ export function PaginaFinancas() {
       </Modal>
 
       {/* === Modal de simulação de dívida === */}
-      <Modal aberto={modalDividaAberto} onFechar={() => setModalDividaAberto(false)} titulo="Simulador de amortização de dívida">
+      <Modal
+        aberto={modalDividaAberto}
+        onFechar={fecharModalDivida}
+        titulo="Simulador de amortização de dívida"
+      >
         <div className="space-y-4">
           <div>
             <label className="rotulo">Descrição da dívida</label>
