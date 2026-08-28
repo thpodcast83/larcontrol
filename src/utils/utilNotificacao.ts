@@ -1,52 +1,67 @@
 /**
  * utilNotificacao.ts
  * -----------------------------------------------------------------------------
- * Funções utilitárias para envio de notificações ao usuário usando a
- * Web Notifications API do navegador.
- *
- * Usada para alertar membros da família quando outro membro adiciona um
- * item ao carrinho compartilhado, ou para outros alertas importantes.
+ * Utilitário compatível com Celulares (Android/iOS PWA) e Computadores (Desktop)
+ * para exibição de notificações locais e via Service Worker.
  * -----------------------------------------------------------------------------
  */
 
 /**
- * enviarNotificacao
- * Envia uma notificação nativa do navegador (se permitido pelo usuário).
- *
- * @param titulo - Título da notificação.
- * @param corpo - Texto do corpo da notificação.
+ * Solicita permissão do usuário para enviar notificações no navegador/dispositivo.
  */
-export function enviarNotificacao(titulo: string, corpo: string): void {
-  // Verifica se o navegador suporta notificações.
-  if (!('Notification' in window)) return;
+export async function solicitarPermissaoNotificacao(): Promise<boolean> {
+  if (!('Notification' in window)) {
+    console.warn('Este navegador não suporta notificações.');
+    return false;
+  }
 
-  // Se a permissão já foi concedida, envia a notificação.
   if (Notification.permission === 'granted') {
-    new Notification(titulo, {
-      body: corpo,
-      icon: '/icon.svg',
-    });
+    return true;
   }
-  // Se ainda não foi decidido, solicita permissão e envia se aceito.
-  else if (Notification.permission !== 'denied') {
-    Notification.requestPermission().then((permissao) => {
-      if (permissao === 'granted') {
-        new Notification(titulo, {
-          body: corpo,
-          icon: '/icon.svg',
-        });
-      }
-    });
+
+  if (Notification.permission !== 'denied') {
+    const permissao = await Notification.requestPermission();
+    return permissao === 'granted';
   }
+
+  return false;
 }
 
 /**
- * solicitarPermissaoNotificacao
- * Solicita permissão do usuário para enviar notificações.
- * Deve ser chamado em resposta a uma ação do usuário (ex: clique em botão).
+ * Envia a notificação nativa para o dispositivo.
+ * Usa o Service Worker para garantir que funcione em celulares Android e iOS.
  */
-export function solicitarPermissaoNotificacao(): void {
-  if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission();
+export async function enviarNotificacao(titulo: string, corpo: string): Promise<void> {
+  if (!('Notification' in window)) return;
+
+  // Garante a permissão antes de tentar enviar
+  const temPermissao = await solicitarPermissaoNotificacao();
+  if (!temPermissao) return;
+
+  const opcoes: NotificationOptions = {
+    body: corpo,
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    vibrate: [200, 100, 200],
+  };
+
+  // 1. Tenta enviar via Service Worker (Obrigatório para funcionar em CELULARES)
+  if ('serviceWorker' in navigator) {
+    try {
+      const registro = await navigator.serviceWorker.ready;
+      if (registro && registro.showNotification) {
+        await registro.showNotification(titulo, opcoes);
+        return;
+      }
+    } catch (erro) {
+      console.warn('Falha ao notificar via Service Worker, usando fallback:', erro);
+    }
+  }
+
+  // 2. Fallback tradicional (Funciona em Computadores / Desktop)
+  try {
+    new Notification(titulo, opcoes);
+  } catch (erro) {
+    console.error('Erro ao instanciar Notification no Desktop:', erro);
   }
 }
