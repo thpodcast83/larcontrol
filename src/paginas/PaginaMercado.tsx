@@ -177,20 +177,40 @@ export function PaginaMercado() {
 
   /**
    * adicionarItem
-   * Suporta submissão por evento de formulário para garantir fechamento em telas touch.
+   * Fecha o modal instantaneamente (Optimistic UI) e salva no Firestore em segundo plano.
    */
   const adicionarItem = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!novoNome.trim() || !novoPreco) return;
 
+    // 1. Esconde o teclado no celular imediatamente
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+
+    // 2. Fecha o modal NA HORA para não travar o usuário
+    setModalAberto(false);
+
+    // Captura dados do formulário antes de limpar o estado
+    const nomeItem = novoNome.trim();
+    const qtdStr = novaQtd;
+    const unidadeItem = novaUnidade;
+    const precoStr = novoPreco;
+
+    // 3. Limpa os campos do formulário para o próximo uso
+    setNovoNome('');
+    setNovaQtd('1');
+    setNovaUnidade('un');
+    setNovoPreco('');
+
     try {
-      const qtd = parseFloat(novaQtd.replace(',', '.')) || 0;
-      const preco = parseFloat(novoPreco.replace(',', '.')) || 0;
-      const subtotal = calcularSubtotal(qtd, novaUnidade, preco);
+      const qtd = parseFloat(qtdStr.replace(',', '.')) || 0;
+      const preco = parseFloat(precoStr.replace(',', '.')) || 0;
+      const subtotal = calcularSubtotal(qtd, unidadeItem, preco);
 
       // --- Alerta inteligente da despensa ---
       const itemDespensa = despensa.find(
-        (d) => d.nome.toLowerCase() === novoNome.toLowerCase()
+        (d) => d.nome.toLowerCase() === nomeItem.toLowerCase()
       );
 
       if (itemDespensa) {
@@ -211,18 +231,18 @@ export function PaginaMercado() {
         }
 
         setAlertaDespensa(
-          `No mês anterior você comprou ${qtdDespensa} ${itemDespensa.unidade} de "${novoNome}" a ${formatarMoeda(precoAnterior)} no ${localAnterior}. ` +
+          `No mês anterior você comprou ${qtdDespensa} ${itemDespensa.unidade} de "${nomeItem}" a ${formatarMoeda(precoAnterior)} no ${localAnterior}. ` +
           `Status atual na despensa: ${qtdDespensa} ${itemDespensa.unidade} (${status}). ${comparacao}`
         );
       } else {
         setAlertaDespensa(null);
       }
 
-      // --- Salva no Firestore ---
+      // --- Salva no Firestore (segundo plano) ---
       await addDoc(collection(banco, 'mercado'), {
-        nome: novoNome.trim(),
+        nome: nomeItem,
         quantidade: qtd,
-        unidade: novaUnidade,
+        unidade: unidadeItem,
         precoUnitario: preco,
         subtotal,
         modo,
@@ -235,22 +255,8 @@ export function PaginaMercado() {
       // --- Notificação ---
       enviarNotificacao(
         'Item adicionado ao carrinho',
-        `${usuario?.nome || 'Um membro'} adicionou: ${novoNome} (${formatarMoeda(subtotal)})`
+        `${usuario?.nome || 'Um membro'} adicionou: ${nomeItem} (${formatarMoeda(subtotal)})`
       );
-
-      // --- Limpeza do Formulário ---
-      setNovoNome('');
-      setNovaQtd('1');
-      setNovaUnidade('un');
-      setNovoPreco('');
-
-      // Esconde o teclado no celular se ainda estiver focado
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
-
-      // --- Fechamento do Modal ---
-      setModalAberto(false);
     } catch (erro) {
       console.error("Erro ao adicionar produto:", erro);
     }
