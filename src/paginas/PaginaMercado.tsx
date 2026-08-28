@@ -12,6 +12,7 @@ import {
   orderBy,
   addDoc,
   deleteDoc,
+  updateDoc,
   doc,
   writeBatch,
   serverTimestamp,
@@ -43,6 +44,113 @@ import {
   Edit2,
   Save,
 } from 'lucide-react';
+
+/**
+ * Componente auxiliar para editar diretamente o item encontrado na busca
+ * definindo quantidade, unidade (un, kg, g) e preço antes de atualizar.
+ */
+function ItemBuscaEditavel({ item }: { item: ItemCarrinho }) {
+  const [qtdEditada, setQtdEditada] = useState(item.quantidade ? item.quantidade.toString() : '1');
+  const [unidadeEditada, setUnidadeEditada] = useState<'un' | 'kg' | 'g'>(item.unidade || 'un');
+  const [precoEditado, setPrecoEditado] = useState(item.precoUnitario ? item.precoUnitario.toString() : '');
+
+  // Converte valores para cálculo em tempo real
+  const qNum = parseFloat(qtdEditada.replace(',', '.')) || 0;
+  const pNum = parseFloat(precoEditado.replace(',', '.')) || 0;
+  
+  let subtotalCalculado = qNum * pNum;
+  if (unidadeEditada === 'g') {
+    subtotalCalculado = (qNum / 1000) * pNum;
+  }
+
+  const handleSalvarNoCarrinho = async () => {
+    if (pNum <= 0) {
+      alert('Informe um preço válido.');
+      return;
+    }
+
+    await updateDoc(doc(banco, 'mercado', item.id), {
+      quantidade: qNum,
+      unidade: unidadeEditada,
+      precoUnitario: pNum,
+      subtotal: subtotalCalculado,
+    });
+  };
+
+  const removerItem = async () => {
+    await deleteDoc(doc(banco, 'mercado', item.id));
+  };
+
+  return (
+    <div className="cartao flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold text-slate-900 dark:text-slate-100">{item.nome}</h3>
+          <p className="text-xs text-slate-400">Adicionado por {item.adicionadoPor}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-teal-600 dark:text-teal-400 font-bold">
+            Subtotal: {formatarMoeda(subtotalCalculado)}
+          </span>
+          <button onClick={removerItem} className="text-slate-400 hover:text-red-600" title="Excluir item">
+            <Trash2 size={18} />
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-center">
+        <div>
+          <label className="text-[10px] text-slate-400 block">Quantidade / Peso</label>
+          <input
+            type="text"
+            inputMode="decimal"
+            placeholder={unidadeEditada === 'kg' ? 'Ex: 0.450' : 'Ex: 1'}
+            value={qtdEditada}
+            onChange={(e) => setQtdEditada(e.target.value)}
+            className="campo-entrada text-sm py-1.5 px-2"
+          />
+        </div>
+
+        <div>
+          <label className="text-[10px] text-slate-400 block">Unidade</label>
+          <select
+            value={unidadeEditada}
+            onChange={(e) => setUnidadeEditada(e.target.value as 'un' | 'kg' | 'g')}
+            className="campo-entrada text-sm py-1.5 px-2"
+          >
+            <option value="un">Unidade (un)</option>
+            <option value="kg">Quilo (kg)</option>
+            <option value="g">Grama (g)</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="text-[10px] text-slate-400 block">
+            {unidadeEditada === 'un' ? 'Preço Unitário (R$)' : 'Preço por kg (R$)'}
+          </label>
+          <input
+            type="text"
+            inputMode="decimal"
+            placeholder="0,00"
+            value={precoEditado}
+            onChange={(e) => setPrecoEditado(e.target.value)}
+            className="campo-entrada text-sm py-1.5 px-2"
+          />
+        </div>
+
+        <div className="flex items-end h-full pt-4 sm:pt-0">
+          <button
+            onClick={handleSalvarNoCarrinho}
+            className="botao-primario text-xs w-full py-2"
+            type="button"
+          >
+            Atualizar Carrinho
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function PaginaMercado() {
   const { usuario } = useAuth();
@@ -438,21 +546,17 @@ export function PaginaMercado() {
         />
       </div>
 
-      {/* Lista do Carrinho Atual */}
+      {/* Lista do Carrinho Atual com edição de quantidade, peso e preço */}
       <div className="space-y-3">
-        {itensExibidos.map((item) => (
-          <div key={item.id} className="cartao flex items-center justify-between">
-            <div>
-              <h3 className="font-semibold text-slate-900 dark:text-slate-100">{item.nome}</h3>
-              <p className="text-sm text-slate-500">
-                {item.quantidade} {item.unidade} × {formatarMoeda(item.precoUnitario)} = <strong>{formatarMoeda(item.subtotal)}</strong>
-              </p>
-            </div>
-            <button onClick={() => removerItem(item.id)} className="text-slate-400 hover:text-red-600">
-              <Trash2 size={18} />
-            </button>
+        {itensExibidos.length === 0 ? (
+          <div className="cartao text-center py-12 text-slate-400">
+            <p>Nenhum produto encontrado no carrinho.</p>
           </div>
-        ))}
+        ) : (
+          itensExibidos.map((item) => (
+            <ItemBuscaEditavel key={item.id} item={item} />
+          ))
+        )}
       </div>
 
       {/* Modal Adicionar */}
