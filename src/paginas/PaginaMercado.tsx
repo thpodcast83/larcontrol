@@ -1,10 +1,3 @@
-/**
- * PaginaMercado.tsx
- * -----------------------------------------------------------------------------
- * Módulo de Mercado do LarControl - Compras de Rancho e Gastos Extras.
- * -----------------------------------------------------------------------------
- */
-
 import React, { useEffect, useState } from 'react';
 import {
   collection,
@@ -13,10 +6,9 @@ import {
   orderBy,
   addDoc,
   deleteDoc,
-  updateDoc,
   doc,
-  serverTimestamp,
   writeBatch,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { banco } from '@/firebase';
 import { useAuth } from '@/contextos/ContextoAuth';
@@ -39,8 +31,7 @@ import {
   Package,
   AlertCircle,
   Wallet,
-  Pencil,
-  Check,
+  Search,
 } from 'lucide-react';
 
 export function PaginaMercado() {
@@ -57,18 +48,15 @@ export function PaginaMercado() {
   const [modalAberto, setModalAberto] = useState(false);
   const [alertaDespensa, setAlertaDespensa] = useState<string | null>(null);
 
-  // Estado para controlar a edição do item selecionado
-  const [itemEmEdicao, setItemEmEdicao] = useState<ItemCarrinho | null>(null);
+  // Estado de busca/filtro da lista de itens
+  const [busca, setBusca] = useState('');
 
-  // Campos do formulário de novo/editado item
+  // Campos do formulário de novo item.
   const [novoNome, setNovoNome] = useState('');
   const [novaQtd, setNovaQtd] = useState('1');
   const [novaUnidade, setNovaUnidade] = useState<'un' | 'kg' | 'g'>('un');
   const [novoPreco, setNovoPreco] = useState('');
 
-  /**
-   * Escuta em tempo real do Firestore
-   */
   useEffect(() => {
     const q = query(collection(banco, 'mercado'), orderBy('adicionadoEm', 'desc'));
 
@@ -142,13 +130,17 @@ export function PaginaMercado() {
     solicitarPermissaoNotificacao();
   }, []);
 
-  // --- Cálculos derivados ---
+  // --- Cálculos e Filtros ---
   const itensModo = itens.filter((i) => i.modo === modo);
-  const totalProdutos = itensModo.length;
-  const totalUnidades = itensModo.reduce((acc, i) => acc + i.quantidade, 0);
   const totalGasto = itensModo.reduce((acc, i) => acc + i.subtotal, 0);
+  const totalQuantidade = itensModo.reduce((acc, i) => acc + i.quantidade, 0);
   const saldo = teto - totalGasto;
   const percentual = teto > 0 ? Math.min((totalGasto / teto) * 100, 100) : 0;
+
+  // Filtragem dinamica do input de busca
+  const itensFiltrados = itensModo.filter((item) =>
+    item.nome.toLowerCase().includes(busca.toLowerCase().trim())
+  );
 
   const definirTeto = () => {
     const valor = parseFloat(tetoInput.replace(',', '.'));
@@ -172,25 +164,7 @@ export function PaginaMercado() {
     return qtd * preco;
   };
 
-  const abrirModalNovo = () => {
-    setItemEmEdicao(null);
-    setNovoNome('');
-    setNovaQtd('1');
-    setNovaUnidade('un');
-    setNovoPreco('');
-    setModalAberto(true);
-  };
-
-  const abrirModalEditar = (item: ItemCarrinho) => {
-    setItemEmEdicao(item);
-    setNovoNome(item.nome);
-    setNovaQtd(item.quantidade.toString());
-    setNovaUnidade(item.unidade);
-    setNovoPreco(item.precoUnitario.toString());
-    setModalAberto(true);
-  };
-
-  const salvarItem = async (e?: React.FormEvent) => {
+  const adicionarItem = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!novoNome.trim() || !novoPreco) return;
 
@@ -201,66 +175,64 @@ export function PaginaMercado() {
     setModalAberto(false);
 
     const nomeItem = novoNome.trim();
-    const qtd = parseFloat(novaQtd.replace(',', '.')) || 0;
-    const preco = parseFloat(novoPreco.replace(',', '.')) || 0;
-    const subtotal = calcularSubtotal(qtd, novaUnidade, preco);
+    const qtdStr = novaQtd;
+    const unidadeItem = novaUnidade;
+    const precoStr = novoPreco;
+
+    setNovoNome('');
+    setNovaQtd('1');
+    setNovaUnidade('un');
+    setNovoPreco('');
 
     try {
-      if (itemEmEdicao) {
-        // Atualiza o item existente
-        await updateDoc(doc(banco, 'mercado', itemEmEdicao.id), {
-          nome: nomeItem,
-          quantidade: qtd,
-          unidade: novaUnidade,
-          precoUnitario: preco,
-          subtotal,
-        });
-      } else {
-        // Cria um novo item
-        const itemDespensa = despensa.find(
-          (d) => d.nome.toLowerCase() === nomeItem.toLowerCase()
-        );
+      const qtd = parseFloat(qtdStr.replace(',', '.')) || 0;
+      const preco = parseFloat(precoStr.replace(',', '.')) || 0;
+      const subtotal = calcularSubtotal(qtd, unidadeItem, preco);
 
-        if (itemDespensa) {
-          const precoAnterior = itemDespensa.ultimoPreco || 0;
-          const status = itemDespensa.status || 'Fechado';
-          const qtdDespensa = itemDespensa.quantidade || 0;
-          const localAnterior = itemDespensa.ultimoLocal || 'local anterior';
+      const itemDespensa = despensa.find(
+        (d) => d.nome.toLowerCase() === nomeItem.toLowerCase()
+      );
 
-          let comparacao = '';
-          if (precoAnterior > 0) {
-            if (preco > precoAnterior) {
-              comparacao = `MAIS CARO que a última compra (era ${formatarMoeda(precoAnterior)} no ${localAnterior}).`;
-            } else if (preco < precoAnterior) {
-              comparacao = `MAIS BARATO que a última compra (era ${formatarMoeda(precoAnterior)} no ${localAnterior}).`;
-            } else {
-              comparacao = `Mesmo preço da última compra no ${localAnterior}.`;
-            }
+      if (itemDespensa) {
+        const precoAnterior = itemDespensa.ultimoPreco || 0;
+        const status = itemDespensa.status || 'Fechado';
+        const qtdDespensa = itemDespensa.quantidade || 0;
+        const localAnterior = itemDespensa.ultimoLocal || 'local anterior';
+
+        let comparacao = '';
+        if (precoAnterior > 0) {
+          if (preco > precoAnterior) {
+            comparacao = `MAIS CARO que a última compra (era ${formatarMoeda(precoAnterior)} no ${localAnterior}).`;
+          } else if (preco < precoAnterior) {
+            comparacao = `MAIS BARATO que a última compra (era ${formatarMoeda(precoAnterior)} no ${localAnterior}).`;
+          } else {
+            comparacao = `Mesmo preço da última compra no ${localAnterior}.`;
           }
-
-          setAlertaDespensa(
-            `No mês anterior você comprou ${qtdDespensa} ${itemDespensa.unidade} de "${nomeItem}" a ${formatarMoeda(precoAnterior)} no ${localAnterior}. ` +
-            `Status atual na despensa: ${qtdDespensa} ${itemDespensa.unidade} (${status}). ${comparacao}`
-          );
-        } else {
-          setAlertaDespensa(null);
         }
 
-        await addDoc(collection(banco, 'mercado'), {
-          nome: nomeItem,
-          quantidade: qtd,
-          unidade: novaUnidade,
-          precoUnitario: preco,
-          subtotal,
-          modo,
-          mercado: mercado || 'Não informado',
-          adicionadoPor: usuario?.nome || 'Usuário',
-          adicionadoEm: serverTimestamp(),
-          localizacao,
-        });
+        setAlertaDespensa(
+          `No mês anterior você comprou ${qtdDespensa} ${itemDespensa.unidade} de "${nomeItem}" a ${formatarMoeda(precoAnterior)} no ${localAnterior}. ` +
+          `Status atual na despensa: ${qtdDespensa} ${itemDespensa.unidade} (${status}). ${comparacao}`
+        );
+      } else {
+        setAlertaDespensa(null);
       }
+
+      await addDoc(collection(banco, 'mercado'), {
+        nome: nomeItem,
+        quantidade: qtd,
+        unidade: unidadeItem,
+        precoUnitario: preco,
+        subtotal,
+        modo,
+        mercado: mercado || 'Não informado',
+        adicionadoPor: usuario?.nome || 'Usuário',
+        adicionadoEm: serverTimestamp(),
+        localizacao,
+      });
+
     } catch (erro) {
-      console.error("Erro ao salvar produto:", erro);
+      console.error("Erro ao adicionar produto:", erro);
     }
   };
 
@@ -269,33 +241,32 @@ export function PaginaMercado() {
   };
 
   const importarItens = async (itensImportados: ItemImportado[]) => {
-    try {
-      const tamanhoLote = 500;
-      for (let i = 0; i < itensImportados.length; i += tamanhoLote) {
-        const loteItens = itensImportados.slice(i, i + tamanhoLote);
-        const batch = writeBatch(banco);
+    const tamanhoLote = 500;
+    const colecaoRef = collection(banco, 'mercado');
 
-        loteItens.forEach((item) => {
-          const subtotal = calcularSubtotal(item.quantidade, item.unidade, item.preco);
-          const docRef = doc(collection(banco, 'mercado'));
-          batch.set(docRef, {
-            nome: item.nome,
-            quantidade: item.quantidade,
-            unidade: item.unidade || 'un',
-            precoUnitario: item.preco,
-            subtotal,
-            modo,
-            mercado: mercado || 'Importado',
-            adicionadoPor: usuario?.nome || 'Usuário',
-            adicionadoEm: serverTimestamp(),
-            localizacao,
-          });
+    for (let i = 0; i < itensImportados.length; i += tamanhoLote) {
+      const lote = writeBatch(banco);
+      const fatia = itensImportados.slice(i, i + tamanhoLote);
+
+      fatia.forEach((item) => {
+        const novoDocRef = doc(colecaoRef);
+        const subtotal = calcularSubtotal(item.quantidade, item.unidade, item.preco);
+
+        lote.set(novoDocRef, {
+          nome: item.nome,
+          quantidade: item.quantidade,
+          unidade: item.unidade,
+          precoUnitario: item.preco,
+          subtotal,
+          modo,
+          mercado: mercado || 'Importado',
+          adicionadoPor: usuario?.nome || 'Usuário',
+          adicionadoEm: serverTimestamp(),
+          localizacao,
         });
+      });
 
-        await batch.commit();
-      }
-    } catch (erro) {
-      console.error("Erro ao importar lista para o Firestore:", erro);
+      await lote.commit();
     }
   };
 
@@ -315,7 +286,7 @@ export function PaginaMercado() {
         subtitulo: `Mercado: ${mercado || 'Não informado'} | Local: ${localizacao || 'N/A'}`,
         colunas,
         linhas,
-        total: `TOTAL: ${formatarMoeda(totalGasto)} (${totalProdutos} produtos)`,
+        total: `TOTAL: ${formatarMoeda(totalGasto)}`,
       },
       `relatorio-${modo}-larcontrol.pdf`
     );
@@ -331,6 +302,23 @@ export function PaginaMercado() {
         <p className="text-slate-500 text-sm mt-1">
           Compras de rancho e gastos extras com sincronização em tempo real.
         </p>
+      </div>
+
+      {/* --- NOVO: Card Resumo / Total acumulado no topo --- */}
+      <div className="cartao-destaque bg-gradient-to-r from-teal-800 to-teal-950 text-white flex items-center justify-between p-5 rounded-2xl shadow-lg">
+        <div>
+          <span className="text-teal-200 text-xs font-semibold uppercase tracking-wider">
+            Total {modo === 'rancho' ? 'do Rancho' : 'dos Gastos Extras'}
+          </span>
+          <h2 className="text-3xl font-extrabold text-white mt-0.5">
+            {formatarMoeda(totalGasto)}
+          </h2>
+        </div>
+        <div className="text-right">
+          <span className="badge bg-teal-700/60 text-teal-100 text-xs px-3 py-1 rounded-full font-medium">
+            {itensModo.length} itens ({totalQuantidade} un/kg)
+          </span>
+        </div>
       </div>
 
       <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
@@ -445,33 +433,50 @@ export function PaginaMercado() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <button onClick={abrirModalNovo} className="botao-primario">
-            <Plus size={18} />
-            Adicionar item
-          </button>
-          <BotaoImportar onImportar={importarItens} />
-          <button onClick={gerarPdf} className="botao-secundario">
-            <FileText size={18} />
-            Exportar PDF
-          </button>
-        </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <button onClick={() => setModalAberto(true)} className="botao-primario">
+          <Plus size={18} />
+          Adicionar item
+        </button>
+        <BotaoImportar onImportar={importarItens} />
+        <button onClick={gerarPdf} className="botao-secundario">
+          <FileText size={18} />
+          Exportar PDF
+        </button>
+      </div>
 
-        {/* --- CONTADOR DE PRODUTOS --- */}
-        <div className="text-sm font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-xl">
-          Total de itens: <span className="text-teal-600 dark:text-teal-400 font-bold">{totalProdutos}</span> ({totalUnidades} un/kg)
-        </div>
+      {/* --- NOVO: Campo de Busca com Auto-complete/Filtro --- */}
+      <div className="relative">
+        <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          type="text"
+          placeholder="Buscar no carrinho (ex: Leite, Sabão)..."
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          className="campo-entrada pl-10"
+        />
+        {busca && (
+          <button
+            onClick={() => setBusca('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded-full"
+          >
+            Limpar
+          </button>
+        )}
       </div>
 
       <div className="space-y-3">
-        {itensModo.length === 0 ? (
+        {itensFiltrados.length === 0 ? (
           <div className="cartao text-center py-12 text-slate-400">
             <ShoppingCart size={40} className="mx-auto mb-3 opacity-40" />
-            <p>Carrinho vazio. Adicione itens para começar.</p>
+            <p>
+              {busca
+                ? `Nenhum produto encontrado para "${busca}".`
+                : 'Carrinho vazio. Adicione itens para começar.'}
+            </p>
           </div>
         ) : (
-          itensModo.map((item) => {
+          itensFiltrados.map((item) => {
             const itemDespensa = despensa.find(
               (d) => d.nome.toLowerCase() === item.nome.toLowerCase()
             );
@@ -502,63 +507,41 @@ export function PaginaMercado() {
                     Por {item.adicionadoPor} • {formatarData(item.adicionadoEm)}
                   </p>
                 </div>
-
-                <div className="flex items-center gap-1">
-                  {/* --- BOTÃO EDITAR ITEM --- */}
-                  <button
-                    onClick={() => abrirModalEditar(item)}
-                    className="p-2 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/30 transition-colors"
-                    aria-label="Editar item"
-                    title="Editar nome ou valor"
-                    type="button"
-                  >
-                    <Pencil size={18} />
-                  </button>
-
-                  {/* --- BOTÃO REMOVER ITEM --- */}
-                  <button
-                    onClick={() => removerItem(item.id)}
-                    className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-                    aria-label="Remover item"
-                    type="button"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
+                <button
+                  onClick={() => removerItem(item.id)}
+                  className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                  aria-label="Remover item"
+                  type="button"
+                >
+                  <Trash2 size={18} />
+                </button>
               </div>
             );
           })
         )}
       </div>
 
-      {itensModo.length > 0 && (
-        <div className="cartao-destaque flex items-center justify-between">
-          <div>
-            <span className="font-bold text-slate-800 dark:text-slate-100 block">Total {modo === 'rancho' ? 'do Rancho' : 'dos Gastos Extras'}</span>
-            <span className="text-xs text-slate-500">{totalProdutos} produtos cadastrados</span>
-          </div>
-          <span className="text-2xl font-bold text-teal-700 dark:text-teal-400">{formatarMoeda(totalGasto)}</span>
-        </div>
-      )}
-
-      {/* --- MODAL DE NOVO / EDITA ITEM --- */}
-      <Modal
-        aberto={modalAberto}
-        onFechar={() => setModalAberto(false)}
-        titulo={itemEmEdicao ? 'Editar item' : 'Adicionar item ao carrinho'}
-      >
-        <form onSubmit={salvarItem} className="space-y-4">
+      {/* --- Modal de adição com autocomplete baseado na despensa --- */}
+      <Modal aberto={modalAberto} onFechar={() => setModalAberto(false)} titulo="Adicionar item ao carrinho">
+        <form onSubmit={adicionarItem} className="space-y-4">
           <div>
             <label className="rotulo">Nome do produto</label>
             <input
               type="text"
-              placeholder="Ex: Arroz 5kg"
+              list="sugestoes-despensa"
+              placeholder="Ex: Leite Integral"
               value={novoNome}
               onChange={(e) => setNovoNome(e.target.value)}
               className="campo-entrada"
               autoFocus
               required
             />
+            {/* Auto-complete alimentado pelos produtos da despensa */}
+            <datalist id="sugestoes-despensa">
+              {despensa.map((d) => (
+                <option key={d.id} value={d.nome} />
+              ))}
+            </datalist>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -615,8 +598,8 @@ export function PaginaMercado() {
             </div>
           )}
           <button type="submit" className="botao-primario w-full">
-            {itemEmEdicao ? <Check size={18} /> : <Plus size={18} />}
-            {itemEmEdicao ? 'Salvar alterações' : 'Adicionar ao carrinho'}
+            <Plus size={18} />
+            Adicionar ao carrinho
           </button>
         </form>
       </Modal>
