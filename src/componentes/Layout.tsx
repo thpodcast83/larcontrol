@@ -6,7 +6,7 @@
  * Contém:
  *  - Cabeçalho (header) com logo, botão de alternar tema escuro/claro,
  *    nome do usuário logado e botão de sair.
- *  - Barra de navegação inferior (mobile) / lateral (desktop) com os 6 módulos.
+ *  - Barra de navegação inferior (mobile) / lateral (desktop) com os módulos.
  *  - Área de conteúdo onde a página ativa é renderizada.
  * -----------------------------------------------------------------------------
  */
@@ -22,6 +22,7 @@ import {
   Home,
   Sun,
   Moon,
+  History, // 1. Importe o ícone de histórico
 } from 'lucide-react';
 import { useAuth } from '@/contextos/ContextoAuth';
 
@@ -44,6 +45,7 @@ const itensNav: ItemNav[] = [
   { id: 'combustivel', rotulo: 'Combustível', icone: <Fuel size={22} /> },
   { id: 'financas', rotulo: 'Finanças', icone: <Wallet size={22} /> },
   { id: 'obras', rotulo: 'Obras', icone: <Hammer size={22} /> },
+  { id: 'historico', rotulo: 'Histórico', icone: <History size={22} /> }, // 2. Adicione o histórico na lista de navegação
 ];
 
 /**
@@ -133,7 +135,7 @@ export function Layout({ paginaAtual, onMudarPagina, children }: LayoutProps) {
         </div>
 
         {/* Navegação Principal */}
-        <nav className="flex-1 px-3 py-4 space-y-1">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {itensNav.map((item) => (
             <button
               key={item.id}
@@ -194,24 +196,24 @@ export function Layout({ paginaAtual, onMudarPagina, children }: LayoutProps) {
       </aside>
 
       {/* === Área de conteúdo === */}
-      <main className="flex-1 lg:ml-64 pb-20 lg:pb-8">
+      <main className="flex-1 lg:ml-64 pb-24 lg:pb-8">
         <div className="max-w-5xl mx-auto px-4 py-6 lg:px-8 lg:py-8">{children}</div>
       </main>
 
       {/* === Barra de navegação inferior (mobile) === */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-800 dark:border-slate-700 border-t border-slate-200 flex items-center justify-around px-1 py-2 z-30 lg:hidden safe-area-pb">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-800 dark:border-slate-700 border-t border-slate-200 flex items-center justify-around px-1 py-2 z-30 lg:hidden safe-area-pb overflow-x-auto">
         {itensNav.map((item) => (
           <button
             key={item.id}
             onClick={() => onMudarPagina(item.id)}
-            className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg transition-colors min-w-0 flex-1 ${
+            className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-lg transition-colors min-w-0 flex-1 ${
               paginaAtual === item.id
                 ? 'text-primaria-700 dark:text-teal-400 font-semibold'
                 : 'text-slate-400 dark:text-slate-500'
             }`}
           >
             {item.icone}
-            <span className="text-[10px] font-medium truncate w-full text-center">
+            <span className="text-[9px] font-medium truncate w-full text-center">
               {item.rotulo}
             </span>
           </button>
