@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   collection,
   onSnapshot,
@@ -37,7 +37,7 @@ import {
 export function PaginaMercado() {
   const { usuario } = useAuth();
 
-  // --- Estados do módulo ---
+  // --- Estados principais ---
   const [itens, setItens] = useState<ItemCarrinho[]>([]);
   const [despensa, setDespensa] = useState<ItemDespensa[]>([]);
   const [modo, setModo] = useState<'rancho' | 'extras'>('rancho');
@@ -48,14 +48,25 @@ export function PaginaMercado() {
   const [modalAberto, setModalAberto] = useState(false);
   const [alertaDespensa, setAlertaDespensa] = useState<string | null>(null);
 
-  // Estado de busca/filtro da lista de itens
-  const [busca, setBusca] = useState('');
+  // --- Otimizações de busca e renderização mobile ---
+  const [buscaInput, setBuscaInput] = useState('');
+  const [buscaDebounced, setBuscaDebounced] = useState('');
+  const [limiteExibicao, setLimiteExibicao] = useState(30);
 
-  // Campos do formulário de novo item.
+  // Form de novo item
   const [novoNome, setNovoNome] = useState('');
   const [novaQtd, setNovaQtd] = useState('1');
   const [novaUnidade, setNovaUnidade] = useState<'un' | 'kg' | 'g'>('un');
   const [novoPreco, setNovoPreco] = useState('');
+
+  // 1. Debounce para o input de busca (atrasa 300ms a filtragem pesada para não travar o teclado mobile)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setBuscaDebounced(buscaInput);
+      setLimiteExibicao(30); // Reseta a paginação ao buscar
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [buscaInput]);
 
   useEffect(() => {
     const q = query(collection(banco, 'mercado'), orderBy('adicionadoEm', 'desc'));
@@ -130,17 +141,45 @@ export function PaginaMercado() {
     solicitarPermissaoNotificacao();
   }, []);
 
-  // --- Cálculos e Filtros ---
-  const itensModo = itens.filter((i) => i.modo === modo);
-  const totalGasto = itensModo.reduce((acc, i) => acc + i.subtotal, 0);
-  const totalQuantidade = itensModo.reduce((acc, i) => acc + i.quantidade, 0);
+  // 2. Mapeamento da Despensa usando Map O(1) para comparação rápida sem travar o loop
+  const mapaDespensa = useMemo(() => {
+    const map = new Map<string, ItemDespensa>();
+    despensa.forEach((item) => map.set(item.nome.toLowerCase(), item));
+    return map;
+  }, [despensa]);
+
+  // 3. Memoização dos cálculos totais do modo ativo
+  const itensModo = useMemo(() => itens.filter((i) => i.modo === modo), [itens, modo]);
+
+  const { totalGasto, totalQuantidade } = useMemo(() => {
+    return itensModo.reduce(
+      (acc, i) => {
+        acc.totalGasto += i.subtotal;
+        acc.totalQuantidade += i.quantidade;
+        return acc;
+      },
+      { totalGasto: 0, totalQuantidade: 0 }
+    );
+  }, [itensModo]);
+
   const saldo = teto - totalGasto;
   const percentual = teto > 0 ? Math.min((totalGasto / teto) * 100, 100) : 0;
 
-  // Filtragem dinamica do input de busca
-  const itensFiltrados = itensModo.filter((item) =>
-    item.nome.toLowerCase().includes(busca.toLowerCase().trim())
-  );
+  // 4. Filtragem por busca otimizada
+  const itensFiltrados = useMemo(() => {
+    const termo = buscaDebounced.toLowerCase().trim();
+    if (!termo) return itensModo;
+    return itensModo.filter((item) => item.nome.toLowerCase().includes(termo));
+  }, [itensModo, buscaDebounced]);
+
+  // Items visíveis limitados para salvar memória no celular
+  const itensExibidos = useMemo(() => {
+    return itensFiltrados.slice(0, limiteExibicao);
+  }, [itensFiltrados, limiteExibicao]);
+
+  const carregarMais = () => {
+    setLimiteExibicao((prev) => prev + 30);
+  };
 
   const definirTeto = () => {
     const valor = parseFloat(tetoInput.replace(',', '.'));
@@ -189,9 +228,7 @@ export function PaginaMercado() {
       const preco = parseFloat(precoStr.replace(',', '.')) || 0;
       const subtotal = calcularSubtotal(qtd, unidadeItem, preco);
 
-      const itemDespensa = despensa.find(
-        (d) => d.nome.toLowerCase() === nomeItem.toLowerCase()
-      );
+      const itemDespensa = mapaDespensa.get(nomeItem.toLowerCase());
 
       if (itemDespensa) {
         const precoAnterior = itemDespensa.ultimoPreco || 0;
@@ -304,7 +341,7 @@ export function PaginaMercado() {
         </p>
       </div>
 
-      {/* --- NOVO: Card Resumo / Total acumulado no topo --- */}
+      {/* Resumo/Total no topo */}
       <div className="cartao-destaque bg-gradient-to-r from-teal-800 to-teal-950 text-white flex items-center justify-between p-5 rounded-2xl shadow-lg">
         <div>
           <span className="text-teal-200 text-xs font-semibold uppercase tracking-wider">
@@ -323,7 +360,10 @@ export function PaginaMercado() {
 
       <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
         <button
-          onClick={() => setModo('rancho')}
+          onClick={() => {
+            setModo('rancho');
+            setLimiteExibicao(30);
+          }}
           className={`flex-1 py-2.5 rounded-lg font-semibold text-sm transition-all ${
             modo === 'rancho' ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-sm' : 'text-slate-500 dark:text-slate-400'
           }`}
@@ -331,7 +371,10 @@ export function PaginaMercado() {
           Rancho (VR/VA)
         </button>
         <button
-          onClick={() => setModo('extras')}
+          onClick={() => {
+            setModo('extras');
+            setLimiteExibicao(30);
+          }}
           className={`flex-1 py-2.5 rounded-lg font-semibold text-sm transition-all ${
             modo === 'extras' ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-sm' : 'text-slate-500 dark:text-slate-400'
           }`}
@@ -421,7 +464,7 @@ export function PaginaMercado() {
       </div>
 
       {alertaDespensa && (
-        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex items-start gap-3 animar-entrada">
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex items-start gap-3">
           <Package className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" size={20} />
           <div>
             <p className="font-semibold text-amber-800 dark:text-amber-200 text-sm mb-1">Alerta da Despensa</p>
@@ -445,19 +488,22 @@ export function PaginaMercado() {
         </button>
       </div>
 
-      {/* --- NOVO: Campo de Busca com Auto-complete/Filtro --- */}
+      {/* Input de busca otimizado com debounce */}
       <div className="relative">
         <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
         <input
           type="text"
-          placeholder="Buscar no carrinho (ex: Leite, Sabão)..."
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar no carrinho (ex: Leite)..."
+          value={buscaInput}
+          onChange={(e) => setBuscaInput(e.target.value)}
           className="campo-entrada pl-10"
         />
-        {busca && (
+        {buscaInput && (
           <button
-            onClick={() => setBusca('')}
+            onClick={() => {
+              setBuscaInput('');
+              setBuscaDebounced('');
+            }}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded-full"
           >
             Limpar
@@ -466,25 +512,23 @@ export function PaginaMercado() {
       </div>
 
       <div className="space-y-3">
-        {itensFiltrados.length === 0 ? (
+        {itensExibidos.length === 0 ? (
           <div className="cartao text-center py-12 text-slate-400">
             <ShoppingCart size={40} className="mx-auto mb-3 opacity-40" />
             <p>
-              {busca
-                ? `Nenhum produto encontrado para "${busca}".`
+              {buscaDebounced
+                ? `Nenhum produto encontrado para "${buscaDebounced}".`
                 : 'Carrinho vazio. Adicione itens para começar.'}
             </p>
           </div>
         ) : (
-          itensFiltrados.map((item) => {
-            const itemDespensa = despensa.find(
-              (d) => d.nome.toLowerCase() === item.nome.toLowerCase()
-            );
+          itensExibidos.map((item) => {
+            const itemDespensa = mapaDespensa.get(item.nome.toLowerCase());
             const maisCaro = itemDespensa && item.precoUnitario > itemDespensa.ultimoPreco;
             const maisBarato = itemDespensa && item.precoUnitario < itemDespensa.ultimoPreco;
 
             return (
-              <div key={item.id} className="cartao flex items-center gap-3 animar-entrada">
+              <div key={item.id} className="cartao flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-semibold text-slate-900 dark:text-slate-100 truncate">{item.nome}</h3>
@@ -519,9 +563,17 @@ export function PaginaMercado() {
             );
           })
         )}
+
+        {/* Botão de carregar mais itens caso a lista seja muito longa */}
+        {itensFiltrados.length > limiteExibicao && (
+          <div className="text-center pt-2">
+            <button onClick={carregarMais} className="botao-secundario text-sm py-2 px-4">
+              Carregar mais ({itensFiltrados.length - limiteExibicao} restantes)
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* --- Modal de adição com autocomplete baseado na despensa --- */}
       <Modal aberto={modalAberto} onFechar={() => setModalAberto(false)} titulo="Adicionar item ao carrinho">
         <form onSubmit={adicionarItem} className="space-y-4">
           <div>
@@ -536,7 +588,6 @@ export function PaginaMercado() {
               autoFocus
               required
             />
-            {/* Auto-complete alimentado pelos produtos da despensa */}
             <datalist id="sugestoes-despensa">
               {despensa.map((d) => (
                 <option key={d.id} value={d.nome} />
