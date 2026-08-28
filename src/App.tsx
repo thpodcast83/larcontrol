@@ -23,6 +23,7 @@ import { PaginaDespensa } from '@/paginas/PaginaDespensa';
 import { PaginaCombustivel } from '@/paginas/PaginaCombustivel';
 import { PaginaFinancas } from '@/paginas/PaginaFinancas';
 import { PaginaObras } from '@/paginas/PaginaObras';
+import { PaginaHistorico } from '@/paginas/PaginaHistorico'; // 1. Importe a nova página de histórico
 import { obterTokenFCM } from '@/firebase';
 
 /**
@@ -77,6 +78,8 @@ function ConteudoApp() {
         return <PaginaFinancas />;
       case 'obras':
         return <PaginaObras />;
+      case 'historico': // 2. Adicione a rota para o histórico funcionar pelo menu
+        return <PaginaHistorico />;
       default:
         return <PaginaInicio onNavegar={setPaginaAtual} />;
     }
