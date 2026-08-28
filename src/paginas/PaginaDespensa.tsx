@@ -12,7 +12,7 @@
  * -----------------------------------------------------------------------------
  */
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   collection,
   onSnapshot,
@@ -100,31 +100,43 @@ export function PaginaDespensa() {
   /**
    * salvarItem
    * Adiciona um novo item ou atualiza um existente na despensa.
+   * Suporta submissão via submit do formulário (compatível com mobile).
    */
-  const salvarItem = async () => {
+  const salvarItem = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!nome.trim()) return;
 
-    const dados = {
-      nome: nome.trim(),
-      categoria,
-      quantidade: parseFloat(quantidade.replace(',', '.')) || 0,
-      unidade,
-      status,
-      ultimoPreco: parseFloat(ultimoPreco.replace(',', '.')) || 0,
-      ultimoLocal: ultimoLocal.trim() || 'Não informado',
-      ultimaCompra: serverTimestamp(),
-    };
+    try {
+      const dados = {
+        nome: nome.trim(),
+        categoria,
+        quantidade: parseFloat(quantidade.replace(',', '.')) || 0,
+        unidade,
+        status,
+        ultimoPreco: parseFloat(ultimoPreco.replace(',', '.')) || 0,
+        ultimoLocal: ultimoLocal.trim() || 'Não informado',
+        ultimaCompra: serverTimestamp(),
+      };
 
-    if (editandoId) {
-      // Atualiza item existente.
-      await updateDoc(doc(banco, 'despensa', editandoId), dados);
-    } else {
-      // Adiciona novo item.
-      await addDoc(collection(banco, 'despensa'), dados);
+      if (editandoId) {
+        // Atualiza item existente.
+        await updateDoc(doc(banco, 'despensa', editandoId), dados);
+      } else {
+        // Adiciona novo item.
+        await addDoc(collection(banco, 'despensa'), dados);
+      }
+
+      limparFormulario();
+
+      // Desfoca o teclado virtual no mobile
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+
+      setModalAberto(false);
+    } catch (erro) {
+      console.error('Erro ao salvar item na despensa:', erro);
     }
-
-    limparFormulario();
-    setModalAberto(false);
   };
 
   /**
@@ -132,9 +144,13 @@ export function PaginaDespensa() {
    * Alterna o status do item entre Aberto e Fechado.
    */
   const alternarStatus = async (item: ItemDespensa) => {
-    await updateDoc(doc(banco, 'despensa', item.id), {
-      status: item.status === 'Fechado' ? 'Aberto' : 'Fechado',
-    });
+    try {
+      await updateDoc(doc(banco, 'despensa', item.id), {
+        status: item.status === 'Fechado' ? 'Aberto' : 'Fechado',
+      });
+    } catch (erro) {
+      console.error('Erro ao alternar status:', erro);
+    }
   };
 
   /**
@@ -142,7 +158,11 @@ export function PaginaDespensa() {
    * Remove um item da despensa.
    */
   const removerItem = async (id: string) => {
-    await deleteDoc(doc(banco, 'despensa', id));
+    try {
+      await deleteDoc(doc(banco, 'despensa', id));
+    } catch (erro) {
+      console.error('Erro ao remover item:', erro);
+    }
   };
 
   /**
@@ -181,17 +201,21 @@ export function PaginaDespensa() {
    * Importa itens em massa para a despensa.
    */
   const importarItens = async (itensImportados: ItemImportado[]) => {
-    for (const item of itensImportados) {
-      await addDoc(collection(banco, 'despensa'), {
-        nome: item.nome,
-        categoria: 'Armários',
-        quantidade: item.quantidade,
-        unidade: item.unidade,
-        status: 'Fechado',
-        ultimoPreco: item.preco,
-        ultimoLocal: 'Importado',
-        ultimaCompra: serverTimestamp(),
-      });
+    try {
+      for (const item of itensImportados) {
+        await addDoc(collection(banco, 'despensa'), {
+          nome: item.nome,
+          categoria: 'Armários',
+          quantidade: item.quantidade,
+          unidade: item.unidade,
+          status: 'Fechado',
+          ultimoPreco: item.preco,
+          ultimoLocal: 'Importado',
+          ultimaCompra: serverTimestamp(),
+        });
+      }
+    } catch (erro) {
+      console.error('Erro ao importar itens:', erro);
     }
   };
 
@@ -242,6 +266,7 @@ export function PaginaDespensa() {
         {categorias.map((cat) => (
           <button
             key={cat}
+            type="button"
             onClick={() => setFiltroCategoria(cat)}
             className={`px-4 py-2 rounded-xl font-semibold text-sm whitespace-nowrap transition-all ${
               filtroCategoria === cat
@@ -257,6 +282,7 @@ export function PaginaDespensa() {
       {/* Barra de ações */}
       <div className="flex flex-wrap items-center gap-3">
         <button
+          type="button"
           onClick={() => {
             limparFormulario();
             setModalAberto(true);
@@ -267,7 +293,7 @@ export function PaginaDespensa() {
           Adicionar item
         </button>
         <BotaoImportar onImportar={importarItens} />
-        <button onClick={gerarPdf} className="botao-secundario">
+        <button type="button" onClick={gerarPdf} className="botao-secundario">
           <FileText size={18} />
           Exportar PDF
         </button>
@@ -301,6 +327,7 @@ export function PaginaDespensa() {
               <div className="flex items-center gap-1">
                 {/* Botão de alternar status */}
                 <button
+                  type="button"
                   onClick={() => alternarStatus(item)}
                   className={`p-2 rounded-lg transition-colors ${
                     item.status === 'Aberto'
@@ -313,6 +340,7 @@ export function PaginaDespensa() {
                 </button>
                 {/* Botão de editar */}
                 <button
+                  type="button"
                   onClick={() => editarItem(item)}
                   className="p-2 rounded-lg text-slate-400 hover:text-primaria-700 hover:bg-primaria-50 transition-colors"
                   aria-label="Editar"
@@ -321,6 +349,7 @@ export function PaginaDespensa() {
                 </button>
                 {/* Botão de remover */}
                 <button
+                  type="button"
                   onClick={() => removerItem(item.id)}
                   className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                   aria-label="Remover"
@@ -339,7 +368,7 @@ export function PaginaDespensa() {
         onFechar={() => setModalAberto(false)}
         titulo={editandoId ? 'Editar item da despensa' : 'Adicionar item à despensa'}
       >
-        <div className="space-y-4">
+        <form onSubmit={salvarItem} className="space-y-4">
           <div>
             <label className="rotulo">Nome do item</label>
             <input
@@ -349,6 +378,7 @@ export function PaginaDespensa() {
               onChange={(e) => setNome(e.target.value)}
               className="campo-entrada"
               autoFocus
+              required
             />
           </div>
           <div>
@@ -372,6 +402,7 @@ export function PaginaDespensa() {
                 value={quantidade}
                 onChange={(e) => setQuantidade(e.target.value)}
                 className="campo-entrada"
+                required
               />
             </div>
             <div>
@@ -391,6 +422,7 @@ export function PaginaDespensa() {
             <label className="rotulo">Status</label>
             <div className="flex gap-2">
               <button
+                type="button"
                 onClick={() => setStatus('Fechado')}
                 className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all ${
                   status === 'Fechado' ? 'bg-primaria-700 text-white' : 'bg-slate-100 text-slate-500'
@@ -399,6 +431,7 @@ export function PaginaDespensa() {
                 <Lock size={16} className="inline mr-1" /> Fechado
               </button>
               <button
+                type="button"
                 onClick={() => setStatus('Aberto')}
                 className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all ${
                   status === 'Aberto' ? 'bg-primaria-700 text-white' : 'bg-slate-100 text-slate-500'
@@ -431,10 +464,10 @@ export function PaginaDespensa() {
               />
             </div>
           </div>
-          <button onClick={salvarItem} className="botao-primario w-full">
+          <button type="submit" className="botao-primario w-full">
             {editandoId ? 'Salvar alterações' : 'Adicionar à despensa'}
           </button>
-        </div>
+        </form>
       </Modal>
     </div>
   );
