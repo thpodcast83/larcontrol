@@ -107,38 +107,33 @@ body {
 }
 
 /* =============================================================================
-   CORREÇÃO FORÇADA DE CONTRASTE EM TODAS AS PÁGINAS (DARK MODE)
+   Ajustes Específicos para Dark Mode (Resolução de visibilidade)
    ============================================================================= */
 
-/* Garante textos brancos e visíveis para títulos, rótulos e nomes de itens */
-.dark body,
-.dark h1,
-.dark h2,
-.dark h3,
-.dark h4,
-.dark h5,
-.dark h6,
-.dark label,
-.dark p,
-.dark span,
-.dark strong,
-.dark li,
-.dark div {
-  color: #f8fafc;
+/* 1. Garante leitura em cards amarelos / alertas no Modo Escuro */
+.dark .bg-amber-50,
+.dark .bg-yellow-50,
+.dark .bg-amber-100,
+.dark .bg-yellow-100 {
+  background-color: #2e2305 !important;
+  border-color: #854d0e !important;
 }
 
-/* Preserva textos informativos secundários (ex: autor, data de criação) com boa leitura */
-.dark .text-slate-400,
-.dark .text-slate-500,
-.dark .text-slate-600,
-.dark .text-slate-700,
-.dark .text-gray-400,
-.dark .text-gray-500,
-.dark .text-gray-600 {
-  color: #94a3b8 !important;
+.dark .text-amber-900,
+.dark .text-amber-800,
+.dark .text-yellow-900,
+.dark .text-yellow-800 {
+  color: #fef08a !important;
 }
 
-/* Textos principais com classes hardcoded do Tailwind */
+.dark .text-amber-700,
+.dark .text-amber-600,
+.dark .text-yellow-700,
+.dark .text-yellow-600 {
+  color: #fde047 !important;
+}
+
+/* 2. Força títulos e textos escuros a ficarem claros no Dark Mode */
 .dark .text-slate-800,
 .dark .text-slate-900,
 .dark .text-gray-800,
@@ -146,7 +141,19 @@ body {
   color: #f8fafc !important;
 }
 
-/* Fundo dos campos de digitacao e caixas de seleção */
+.dark .text-slate-600,
+.dark .text-slate-700,
+.dark .text-gray-600,
+.dark .text-gray-700 {
+  color: #cbd5e1 !important;
+}
+
+.dark .text-slate-500,
+.dark .text-gray-500 {
+  color: #94a3b8 !important;
+}
+
+/* 3. Inputs, Textareas e Selects no Dark Mode */
 .dark input,
 .dark select,
 .dark textarea {
@@ -155,7 +162,6 @@ body {
   border-color: #334155 !important;
 }
 
-/* Placeholders dentro dos inputs */
 .dark input::placeholder,
 .dark textarea::placeholder {
   color: #64748b !important;
