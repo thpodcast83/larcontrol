@@ -15,6 +15,7 @@ import {
   deleteDoc,
   doc,
   serverTimestamp,
+  writeBatch,
 } from 'firebase/firestore';
 import { banco } from '@/firebase';
 import { useAuth } from '@/contextos/ContextoAuth';
@@ -248,20 +249,33 @@ export function PaginaMercado() {
   };
 
   const importarItens = async (itensImportados: ItemImportado[]) => {
-    for (const item of itensImportados) {
-      const subtotal = calcularSubtotal(item.quantidade, item.unidade, item.preco);
-      await addDoc(collection(banco, 'mercado'), {
-        nome: item.nome,
-        quantidade: item.quantidade,
-        unidade: item.unidade,
-        precoUnitario: item.preco,
-        subtotal,
-        modo,
-        mercado: mercado || 'Importado',
-        adicionadoPor: usuario?.nome || 'Usuário',
-        adicionadoEm: serverTimestamp(),
-        localizacao,
-      });
+    try {
+      const tamanhoLote = 500;
+      for (let i = 0; i < itensImportados.length; i += tamanhoLote) {
+        const loteItens = itensImportados.slice(i, i + tamanhoLote);
+        const batch = writeBatch(banco);
+
+        loteItens.forEach((item) => {
+          const subtotal = calcularSubtotal(item.quantidade, item.unidade, item.preco);
+          const docRef = doc(collection(banco, 'mercado'));
+          batch.set(docRef, {
+            nome: item.nome,
+            quantidade: item.quantidade,
+            unidade: item.unidade || 'un',
+            precoUnitario: item.preco,
+            subtotal,
+            modo,
+            mercado: mercado || 'Importado',
+            adicionadoPor: usuario?.nome || 'Usuário',
+            adicionadoEm: serverTimestamp(),
+            localizacao,
+          });
+        });
+
+        await batch.commit();
+      }
+    } catch (erro) {
+      console.error("Erro ao importar lista para o Firestore:", erro);
     }
   };
 
