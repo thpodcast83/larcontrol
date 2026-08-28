@@ -2,19 +2,6 @@
  * PaginaMercado.tsx
  * -----------------------------------------------------------------------------
  * Módulo de Mercado do LarControl - Compras de Rancho e Gastos Extras.
- *
- * Funcionalidades principais:
- *  1. Dois modos: Rancho (Cartão VR/VA) e Gastos Extras (Pix/Débito/Crédito).
- *  2. Calculadora de Teto de Gastos: usuário declara valor total do ticket,
- *     sistema subtrai conforme itens entram no carrinho (barra de progresso).
- *  3. Cálculo avançado de unidades: por unidade (inteiros), kg e gramas.
- *  4. Integração com Despensa: alerta com dados da última compra e badges
- *     de preço (mais caro = vermelho, mais barato = verde).
- *  5. Metadados: nome do mercado, data/hora e geolocalização.
- *  6. Sincronização realtime via onSnapshot (carrinho compartilhado).
- *  7. Notificações push quando outro membro adiciona item.
- *  8. Geração de relatório PDF.
- *  9. Importação em massa de listas (.txt, .csv, .docx, .xml).
  * -----------------------------------------------------------------------------
  */
 
@@ -56,15 +43,15 @@ export function PaginaMercado() {
   const { usuario } = useAuth();
 
   // --- Estados do módulo ---
-  const [itens, setItens] = useState<ItemCarrinho[]>([]); // Itens do carrinho (realtime).
-  const [despensa, setDespensa] = useState<ItemDespensa[]>([]); // Itens da despensa (para alertas).
-  const [modo, setModo] = useState<'rancho' | 'extras'>('rancho'); // Modo ativo.
-  const [teto, setTeto] = useState<number>(0); // Valor total declarado do ticket.
-  const [tetoInput, setTetoInput] = useState(''); // Input do teto.
-  const [mercado, setMercado] = useState(''); // Nome do mercado.
-  const [localizacao, setLocalizacao] = useState(''); // Geolocalização.
-  const [modalAberto, setModalAberto] = useState(false); // Modal de adicionar item.
-  const [alertaDespensa, setAlertaDespensa] = useState<string | null>(null); // Alerta da despensa.
+  const [itens, setItens] = useState<ItemCarrinho[]>([]);
+  const [despensa, setDespensa] = useState<ItemDespensa[]>([]);
+  const [modo, setModo] = useState<'rancho' | 'extras'>('rancho');
+  const [teto, setTeto] = useState<number>(0);
+  const [tetoInput, setTetoInput] = useState('');
+  const [mercado, setMercado] = useState('');
+  const [localizacao, setLocalizacao] = useState('');
+  const [modalAberto, setModalAberto] = useState(false);
+  const [alertaDespensa, setAlertaDespensa] = useState<string | null>(null);
 
   // Campos do formulário de novo item.
   const [novoNome, setNovoNome] = useState('');
@@ -73,11 +60,36 @@ export function PaginaMercado() {
   const [novoPreco, setNovoPreco] = useState('');
 
   /**
-   * Efeito: escuta em tempo real (onSnapshot) da coleção "mercado" no Firestore.
+   * Escuta em tempo real do Firestore:
+   * Monta a lista e notifica este dispositivo caso OUTRO membro adicione um item.
    */
   useEffect(() => {
     const q = query(collection(banco, 'mercado'), orderBy('adicionadoEm', 'desc'));
+
     const cancelar = onSnapshot(q, (snapshot) => {
+      // Notifica este aparelho se houver uma nova inserção feita por OUTRA pessoa
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added' && !snapshot.metadata.hasPendingWrites) {
+          const dados = change.doc.data();
+          const adicionadoPor = dados.adicionadoPor || 'Membro da casa';
+          const nomeItem = dados.nome || 'Novo item';
+          const subtotal = dados.subtotal || 0;
+
+          // Se a edição veio de outro usuário, envia notificação neste aparelho
+          if (usuario?.nome && adicionadoPor.toLowerCase() !== usuario.nome.toLowerCase()) {
+            try {
+              enviarNotificacao(
+                '🛒 Novo item no carrinho!',
+                `${adicionadoPor} acabou de adicionar: ${nomeItem} (${formatarMoeda(subtotal)})`
+              );
+            } catch (err) {
+              console.warn('Falha ao exibir notificação:', err);
+            }
+          }
+        }
+      });
+
+      // Atualiza a lista de itens local
       const lista: ItemCarrinho[] = [];
       snapshot.forEach((docSnap) => {
         const dados = docSnap.data();
@@ -96,11 +108,12 @@ export function PaginaMercado() {
       });
       setItens(lista);
     });
+
     return () => cancelar();
-  }, []);
+  }, [usuario?.nome]);
 
   /**
-   * Efeito: escuta a coleção "despensa" para usar nos alertas inteligentes.
+   * Escuta a coleção despensa para alertas inteligentes.
    */
   useEffect(() => {
     const q = query(collection(banco, 'despensa'));
@@ -125,28 +138,16 @@ export function PaginaMercado() {
     return () => cancelar();
   }, []);
 
-  // Solicita permissão de notificação ao montar o componente.
   useEffect(() => {
     solicitarPermissaoNotificacao();
   }, []);
 
   // --- Cálculos derivados ---
-
-  // Filtra itens pelo modo ativo (rancho ou extras).
   const itensModo = itens.filter((i) => i.modo === modo);
-
-  // Total gasto no modo atual.
   const totalGasto = itensModo.reduce((acc, i) => acc + i.subtotal, 0);
-
-  // Saldo restante do teto.
   const saldo = teto - totalGasto;
-
-  // Percentual usado do teto (para barra de progresso).
   const percentual = teto > 0 ? Math.min((totalGasto / teto) * 100, 100) : 0;
 
-  /**
-   * definirTeto
-   */
   const definirTeto = () => {
     const valor = parseFloat(tetoInput.replace(',', '.'));
     if (!isNaN(valor) && valor > 0) {
@@ -155,9 +156,6 @@ export function PaginaMercado() {
     }
   };
 
-  /**
-   * obterLocal
-   */
   const obterLocal = async () => {
     try {
       const geo = await obterGeolocalizacao();
@@ -167,37 +165,26 @@ export function PaginaMercado() {
     }
   };
 
-  /**
-   * calcularSubtotal
-   */
   const calcularSubtotal = (qtd: number, unidade: string, preco: number): number => {
     if (unidade === 'g') return (qtd / 1000) * preco;
     return qtd * preco;
   };
 
-  /**
-   * adicionarItem
-   * Fecha o modal instantaneamente (Optimistic UI), dispara notificação local segura e salva no Firestore em segundo plano.
-   */
   const adicionarItem = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!novoNome.trim() || !novoPreco) return;
 
-    // 1. Esconde o teclado no celular imediatamente
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
 
-    // 2. Fecha o modal NA HORA
     setModalAberto(false);
 
-    // Captura os dados do formulário em variáveis locais
     const nomeItem = novoNome.trim();
     const qtdStr = novaQtd;
     const unidadeItem = novaUnidade;
     const precoStr = novoPreco;
 
-    // 3. Limpa os campos do formulário para o próximo uso
     setNovoNome('');
     setNovaQtd('1');
     setNovaUnidade('un');
@@ -208,7 +195,6 @@ export function PaginaMercado() {
       const preco = parseFloat(precoStr.replace(',', '.')) || 0;
       const subtotal = calcularSubtotal(qtd, unidadeItem, preco);
 
-      // --- Alerta inteligente da despensa com validações (safe access) ---
       const itemDespensa = despensa.find(
         (d) => d.nome.toLowerCase() === nomeItem.toLowerCase()
       );
@@ -238,17 +224,7 @@ export function PaginaMercado() {
         setAlertaDespensa(null);
       }
 
-      // --- Dispara a Notificação (Isolada para garantir execução rápida) ---
-      try {
-        enviarNotificacao(
-          'Item adicionado ao carrinho',
-          `${usuario?.nome || 'Um membro'} adicionou: ${nomeItem} (${formatarMoeda(subtotal)})`
-        );
-      } catch (errNotif) {
-        console.warn("Falha ao emitir notificação no dispositivo:", errNotif);
-      }
-
-      // --- Salva no Firestore (segundo plano) ---
+      // Salva no Firestore
       await addDoc(collection(banco, 'mercado'), {
         nome: nomeItem,
         quantidade: qtd,
@@ -267,16 +243,10 @@ export function PaginaMercado() {
     }
   };
 
-  /**
-   * removerItem
-   */
   const removerItem = async (id: string) => {
     await deleteDoc(doc(banco, 'mercado', id));
   };
 
-  /**
-   * importarItens
-   */
   const importarItens = async (itensImportados: ItemImportado[]) => {
     for (const item of itensImportados) {
       const subtotal = calcularSubtotal(item.quantidade, item.unidade, item.preco);
@@ -295,9 +265,6 @@ export function PaginaMercado() {
     }
   };
 
-  /**
-   * gerarPdf
-   */
   const gerarPdf = () => {
     const colunas = ['Produto', 'Qtd', 'Un.', 'Preço Unit.', 'Subtotal'];
     const linhas = itensModo.map((i) => [
@@ -322,7 +289,6 @@ export function PaginaMercado() {
 
   return (
     <div className="space-y-6">
-      {/* === Cabeçalho do módulo === */}
       <div>
         <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
           <ShoppingCart className="text-primaria-700" />
@@ -333,7 +299,6 @@ export function PaginaMercado() {
         </p>
       </div>
 
-      {/* === Seletor de modo === */}
       <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
         <button
           onClick={() => setModo('rancho')}
@@ -353,7 +318,6 @@ export function PaginaMercado() {
         </button>
       </div>
 
-      {/* === Calculadora de Teto de Gastos === */}
       <div className="cartao-destaque">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -406,7 +370,6 @@ export function PaginaMercado() {
         )}
       </div>
 
-      {/* === Metadados: Mercado e Geolocalização === */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="rotulo">Nome do mercado</label>
@@ -435,7 +398,6 @@ export function PaginaMercado() {
         </div>
       </div>
 
-      {/* === Alerta inteligente da despensa === */}
       {alertaDespensa && (
         <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex items-start gap-3 animar-entrada">
           <Package className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" size={20} />
@@ -449,7 +411,6 @@ export function PaginaMercado() {
         </div>
       )}
 
-      {/* === Barra de ações === */}
       <div className="flex flex-wrap items-center gap-3">
         <button onClick={() => setModalAberto(true)} className="botao-primario">
           <Plus size={18} />
@@ -462,7 +423,6 @@ export function PaginaMercado() {
         </button>
       </div>
 
-      {/* === Lista de itens do carrinho === */}
       <div className="space-y-3">
         {itensModo.length === 0 ? (
           <div className="cartao text-center py-12 text-slate-400">
@@ -515,7 +475,6 @@ export function PaginaMercado() {
         )}
       </div>
 
-      {/* === Total === */}
       {itensModo.length > 0 && (
         <div className="cartao-destaque flex items-center justify-between">
           <span className="font-bold text-slate-800 dark:text-slate-100">Total {modo === 'rancho' ? 'do Rancho' : 'dos Gastos Extras'}</span>
@@ -523,7 +482,6 @@ export function PaginaMercado() {
         </div>
       )}
 
-      {/* === Modal de adicionar item === */}
       <Modal aberto={modalAberto} onFechar={() => setModalAberto(false)} titulo="Adicionar item ao carrinho">
         <form onSubmit={adicionarItem} className="space-y-4">
           <div>
@@ -578,7 +536,6 @@ export function PaginaMercado() {
               required
             />
           </div>
-          {/* Preview do subtotal calculado */}
           {novoPreco && novaQtd && (
             <div className="bg-teal-50 dark:bg-slate-800/80 rounded-xl p-3 text-sm border border-teal-100 dark:border-slate-700">
               <span className="text-slate-600 dark:text-slate-400">Subtotal: </span>
