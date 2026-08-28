@@ -177,7 +177,7 @@ export function PaginaMercado() {
 
   /**
    * adicionarItem
-   * Fecha o modal instantaneamente (Optimistic UI) e salva no Firestore em segundo plano.
+   * Fecha o modal instantaneamente (Optimistic UI), dispara notificação local segura e salva no Firestore em segundo plano.
    */
   const adicionarItem = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -188,10 +188,10 @@ export function PaginaMercado() {
       document.activeElement.blur();
     }
 
-    // 2. Fecha o modal NA HORA para não travar o usuário
+    // 2. Fecha o modal NA HORA
     setModalAberto(false);
 
-    // Captura dados do formulário antes de limpar o estado
+    // Captura os dados do formulário em variáveis locais
     const nomeItem = novoNome.trim();
     const qtdStr = novaQtd;
     const unidadeItem = novaUnidade;
@@ -208,16 +208,16 @@ export function PaginaMercado() {
       const preco = parseFloat(precoStr.replace(',', '.')) || 0;
       const subtotal = calcularSubtotal(qtd, unidadeItem, preco);
 
-      // --- Alerta inteligente da despensa ---
+      // --- Alerta inteligente da despensa com validações (safe access) ---
       const itemDespensa = despensa.find(
         (d) => d.nome.toLowerCase() === nomeItem.toLowerCase()
       );
 
       if (itemDespensa) {
-        const precoAnterior = itemDespensa.ultimoPreco;
-        const status = itemDespensa.status;
-        const qtdDespensa = itemDespensa.quantidade;
-        const localAnterior = itemDespensa.ultimoLocal;
+        const precoAnterior = itemDespensa.ultimoPreco || 0;
+        const status = itemDespensa.status || 'Fechado';
+        const qtdDespensa = itemDespensa.quantidade || 0;
+        const localAnterior = itemDespensa.ultimoLocal || 'local anterior';
 
         let comparacao = '';
         if (precoAnterior > 0) {
@@ -238,6 +238,16 @@ export function PaginaMercado() {
         setAlertaDespensa(null);
       }
 
+      // --- Dispara a Notificação (Isolada para garantir execução rápida) ---
+      try {
+        enviarNotificacao(
+          'Item adicionado ao carrinho',
+          `${usuario?.nome || 'Um membro'} adicionou: ${nomeItem} (${formatarMoeda(subtotal)})`
+        );
+      } catch (errNotif) {
+        console.warn("Falha ao emitir notificação no dispositivo:", errNotif);
+      }
+
       // --- Salva no Firestore (segundo plano) ---
       await addDoc(collection(banco, 'mercado'), {
         nome: nomeItem,
@@ -252,11 +262,6 @@ export function PaginaMercado() {
         localizacao,
       });
 
-      // --- Notificação ---
-      enviarNotificacao(
-        'Item adicionado ao carrinho',
-        `${usuario?.nome || 'Um membro'} adicionou: ${nomeItem} (${formatarMoeda(subtotal)})`
-      );
     } catch (erro) {
       console.error("Erro ao adicionar produto:", erro);
     }
