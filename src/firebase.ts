@@ -1,32 +1,15 @@
 /**
  * firebase.ts
  * -----------------------------------------------------------------------------
- * Arquivo de configuração e conexão com o Firebase.
- *
- * Este módulo inicializa e exporta as instâncias do Firebase Authentication
- * (autenticação de usuários via Google) e do Cloud Firestore (banco de dados
- * NoSQL em tempo real). As credenciais abaixo são específicas do projeto
- * "LarControl" e foram fornecidas pelo solicitante.
- *
- * O Firebase foi escolhido por oferecer:
- *  - Autenticação social (Google) pronta para uso.
- *  - Banco de dados em tempo real (onSnapshot) que permite sincronizar dados
- *    entre múltiplos dispositivos/usuários da mesma família instantaneamente.
- *  - Hospedagem e escalabilidade sem necessidade de servidor próprio.
+ * Arquivo de configuração e conexão com o Firebase (Auth, Firestore e FCM).
  * -----------------------------------------------------------------------------
  */
 
-// Importações do SDK do Firebase para inicializar o app e usar Auth + Firestore.
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getMessaging, getToken } from 'firebase/messaging';
 
-/**
- * firebaseConfig
- * Objeto contendo as credenciais do projeto Firebase "LarControl".
- * Estes dados são públicos (não são secretos) e são usados pelo SDK do
- * Firebase para identificar qual projeto backend este app deve conectar.
- */
 const firebaseConfig = {
   apiKey: 'AIzaSyCBZpoChyjoHRZuOsq2dCl0bRrv7rAr-04',
   authDomain: 'larcontrol-7a527.firebaseapp.com',
@@ -37,14 +20,31 @@ const firebaseConfig = {
   measurementId: 'G-VPHY9CZNSV',
 };
 
-// Inicializa a aplicação Firebase com as credenciais fornecidas.
+// Inicializa a aplicação Firebase
 const app = initializeApp(firebaseConfig);
 
-// Exporta a instância de autenticação (Firebase Auth) para uso em todo o app.
+// Exporta instâncias para Auth e Firestore
 export const auth = getAuth(app);
-
-// Exporta o provedor de login do Google para autenticação social.
 export const provedorGoogle = new GoogleAuthProvider();
-
-// Exporta a instância do Firestore (banco de dados em tempo real).
 export const banco = getFirestore(app);
+
+// Inicializa e exporta o Firebase Cloud Messaging (FCM)
+export const messaging = getMessaging(app);
+
+/**
+ * Função para solicitar permissão de notificação e obter o Token FCM do dispositivo.
+ */
+export const obterTokenFCM = async () => {
+  try {
+    const permissao = await Notification.requestPermission();
+    if (permissao === 'granted') {
+      const token = await getToken(messaging, {
+        vapidKey: 'BKbaIdSPBnL-1h74d0asqWFe8w8DM1n7wBNH7QwDreRKPtGbAttOs0KyW4aTSfrEHE97QN-50-H_xLEWcZaMWSo'
+      });
+      console.log('Token FCM obtido:', token);
+      return token;
+    }
+  } catch (erro) {
+    console.error('Erro ao obter token FCM:', erro);
+  }
+};
