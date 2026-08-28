@@ -2,7 +2,7 @@
  * utilParser.ts
  * -----------------------------------------------------------------------------
  * Funções utilitárias para importação em massa de listas de produtos e itens
- * a partir de arquivos nos formatos .txt, .csv, .docx e .xml.
+ * a partir de arquivos nos formatos .json, .txt, .csv, .docx e .xml.
  *
  * O parser converte o conteúdo do arquivo em um array de objetos normalizados
  * com as propriedades: nome, quantidade, unidade, preco.
@@ -18,7 +18,7 @@ import mammoth from 'mammoth';
 export interface ItemImportado {
   nome: string;
   quantidade: number;
-  unidade: string; // 'un', 'kg', 'g'
+  unidade: 'un' | 'kg' | 'g' | string;
   preco: number;
 }
 
@@ -34,6 +34,8 @@ export async function processarArquivoImportacao(arquivo: File): Promise<ItemImp
   const extensao = arquivo.name.split('.').pop()?.toLowerCase();
 
   switch (extensao) {
+    case 'json':
+      return processarJson(await arquivo.text());
     case 'csv':
       return processarCsv(await arquivo.text());
     case 'txt':
@@ -43,7 +45,40 @@ export async function processarArquivoImportacao(arquivo: File): Promise<ItemImp
     case 'docx':
       return processarDocx(arquivo);
     default:
-      throw new Error(`Formato .${extensao} não suportado. Use .txt, .csv, .docx ou .xml.`);
+      throw new Error(`Formato .${extensao} não suportado. Use .json, .txt, .csv, .docx ou .xml.`);
+  }
+}
+
+/**
+ * processarJson
+ * Processa arquivos JSON flexíveis (aceita chaves em português ou inglês, arrays ou objetos isolados).
+ */
+function processarJson(conteudo: string): ItemImportado[] {
+  try {
+    const dados = JSON.parse(conteudo);
+    const lista = Array.isArray(dados) ? dados : [dados];
+
+    return lista
+      .map((item: any) => {
+        const nome = item.nome || item.product_name || item.descricao || item.name || '';
+        const quantidade = parseFloat(item.quantidade || item.qtd || item.amount || item.quantity || 1);
+        const preco = parseFloat(
+          String(item.preco || item.preco_estimado_brl || item.price || 0)
+            .replace(/[^\d.,-]/g, '')
+            .replace(',', '.')
+        );
+        const unidade = item.unidade || item.unit || 'un';
+
+        return {
+          nome: String(nome).trim(),
+          quantidade: isNaN(quantidade) ? 1 : quantidade,
+          unidade: String(unidade).toLowerCase().trim(),
+          preco: isNaN(preco) ? 0 : preco,
+        };
+      })
+      .filter((i) => i.nome !== '');
+  } catch (err) {
+    throw new Error('O arquivo JSON possui um formato sintático inválido.');
   }
 }
 
@@ -56,11 +91,13 @@ function processarCsv(conteudo: string): ItemImportado[] {
   const linhas = conteudo.trim().split(/\r?\n/);
   const itens: ItemImportado[] = [];
 
+  if (linhas.length === 0) return itens;
+
   // Detecta o separador (vírgula ou ponto-e-vírgula).
   const separador = linhas[0].includes(';') ? ';' : ',';
 
-  // Pula o cabeçalho se a primeira linha contiver "nome".
-  const inicio = linhas[0].toLowerCase().includes('nome') ? 1 : 0;
+  // Pula o cabeçalho se a primeira linha contiver palavras-chave conhecidas.
+  const inicio = /nome|produto|description|item/i.test(linhas[0]) ? 1 : 0;
 
   for (let i = inicio; i < linhas.length; i++) {
     const colunas = linhas[i].split(separador).map((c) => c.trim());
@@ -68,7 +105,7 @@ function processarCsv(conteudo: string): ItemImportado[] {
 
     itens.push({
       nome: colunas[0],
-      quantidade: parseFloat(colunas[1]) || 1,
+      quantidade: parseFloat(colunas[1]?.replace(',', '.')) || 1,
       unidade: colunas[2] || 'un',
       preco: parseFloat(colunas[3]?.replace(/[^\d.,-]/g, '').replace(',', '.')) || 0,
     });
@@ -92,9 +129,9 @@ function processarTxt(conteudo: string): ItemImportado[] {
 
     itens.push({
       nome: partes[0],
-      quantidade: parseFloat(partes[1]) || 1,
+      quantidade: parseFloat(partes[1]?.replace(',', '.')) || 1,
       unidade: partes[2] || 'un',
-      preco: parseFloat(partes[3]?.replace(',', '.')) || 0,
+      preco: parseFloat(partes[3]?.replace(/[^\d.,-]/g, '').replace(',', '.')) || 0,
     });
   }
 
@@ -111,19 +148,17 @@ function processarXml(conteudo: string): ItemImportado[] {
   const doc = parser.parseFromString(conteudo, 'text/xml');
   const itens: ItemImportado[] = [];
 
-  // Busca todos os elementos <item> no XML.
   const elementosItem = doc.querySelectorAll('item');
 
   elementosItem.forEach((el) => {
-    // Tenta obter os valores de elementos filho ou atributos.
     const nome = el.querySelector('nome')?.textContent || el.getAttribute('nome') || '';
     const quantidade =
-      parseFloat(el.querySelector('quantidade')?.textContent || el.getAttribute('quantidade') || '1') || 1;
+      parseFloat((el.querySelector('quantidade')?.textContent || el.getAttribute('quantidade') || '1').replace(',', '.')) || 1;
     const unidade =
       el.querySelector('unidade')?.textContent || el.getAttribute('unidade') || 'un';
     const preco =
       parseFloat(
-        (el.querySelector('preco')?.textContent || el.getAttribute('preco') || '0').replace(',', '.')
+        (el.querySelector('preco')?.textContent || el.getAttribute('preco') || '0').replace(/[^\d.,-]/g, '').replace(',', '.')
       ) || 0;
 
     if (nome) {
@@ -142,6 +177,5 @@ function processarXml(conteudo: string): ItemImportado[] {
 async function processarDocx(arquivo: File): Promise<ItemImportado[]> {
   const arrayBuffer = await arquivo.arrayBuffer();
   const resultado = await mammoth.extractRawText({ arrayBuffer });
-  // Reutiliza o parser de texto para processar o conteúdo extraído.
   return processarTxt(resultado.value);
 }
