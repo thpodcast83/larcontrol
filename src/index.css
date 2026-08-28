@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =============================================================================
+   LarControl - Sistema de Design Global
+   -----------------------------------------------------------------------------
+   Define variáveis CSS, fontes e estilos utilitários reutilizáveis.
+   ============================================================================= */
+
+:root {
+  /* Cor primária (teal) usada em botões, cabeçalhos e destaques. */
+  --cor-primaria: #0f766e;
+  --cor-primaria-escura: #134e4a;
+  --cor-primaria-clara: #5eead4;
+}
+
+/* Fonte principal do app - Inter, moderna e legível. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+html {
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  background-color: #f8fafc;
+  overscroll-behavior-y: none;
+}
+
+/* Scrollbar customizada para visual mais limpo. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* =============================================================================
+   Componentes utilitários reutilizáveis (classes @apply do Tailwind)
+   ============================================================================= */
+
+/* Cartão padrão com sombra suave e cantos arredondados. */
+@layer components {
+  .cartao {
+    @apply bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6;
+  }
+
+  /* Cartão com destaque (borda colorida). */
+  .cartao-destaque {
+    @apply bg-white rounded-2xl shadow-md border-l-4 border-teal-600 p-4 sm:p-6;
+  }
+
+  /* Botão primário - teal sólido. */
+  .botao-primario {
+    @apply inline-flex items-center justify-center gap-2 bg-teal-700 hover:bg-teal-800 text-white font-semibold px-4 py-2.5 rounded-xl transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Botão secundário - contorno teal. */
+  .botao-secundario {
+    @apply inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-teal-700 font-semibold px-4 py-2.5 rounded-xl border border-teal-200 transition-all duration-200 active:scale-95;
+  }
+
+  /* Botão de perigo - vermelho. */
+  .botao-perigo {
+    @apply inline-flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2.5 rounded-xl transition-all duration-200 active:scale-95;
+  }
+
+  /* Campo de entrada de formulário padrão. */
+  .campo-entrada {
+    @apply w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all duration-200;
+  }
+
+  .rotulo {
+    @apply block text-sm font-semibold text-slate-700 mb-1.5;
+  }
+
+  /* Badge de status padrão. */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold;
+  }
+}
+
+/* Animação de entrada suave para modais e cartões. */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animar-entrada {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Animação de slide para notificações. */
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animar-slide {
+  animation: slideIn 0.3s ease-out;
+}
