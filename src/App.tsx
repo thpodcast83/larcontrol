@@ -8,10 +8,11 @@
  *  - Decidir qual tela mostrar: login (se não autenticado) ou app (se autenticado).
  *  - Gerenciar qual página/módulo está ativo.
  *  - Exibir tela de carregamento enquanto verifica a sessão.
+ *  - Solicitar permissão de notificação FCM quando o usuário estiver logado.
  * -----------------------------------------------------------------------------
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import { ProvedorAuth, useAuth } from '@/contextos/ContextoAuth';
 import { Layout } from '@/componentes/Layout';
@@ -22,6 +23,7 @@ import { PaginaDespensa } from '@/paginas/PaginaDespensa';
 import { PaginaCombustivel } from '@/paginas/PaginaCombustivel';
 import { PaginaFinancas } from '@/paginas/PaginaFinancas';
 import { PaginaObras } from '@/paginas/PaginaObras';
+import { obterTokenFCM } from '@/firebase';
 
 /**
  * ConteudoApp
@@ -31,6 +33,17 @@ import { PaginaObras } from '@/paginas/PaginaObras';
 function ConteudoApp() {
   const { usuario, carregando } = useAuth();
   const [paginaAtual, setPaginaAtual] = useState('inicio');
+
+  // Efeito para solicitar permissão de notificações FCM quando o usuário se autentica
+  useEffect(() => {
+    if (usuario) {
+      obterTokenFCM().then((token) => {
+        if (token) {
+          console.log('Permissão FCM concedida para o usuário:', usuario.nome);
+        }
+      });
+    }
+  }, [usuario]);
 
   // Tela de carregamento: enquanto o Firebase verifica a sessão.
   if (carregando) {
