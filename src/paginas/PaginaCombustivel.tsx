@@ -13,7 +13,7 @@
  * -----------------------------------------------------------------------------
  */
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   collection,
   onSnapshot,
@@ -122,42 +122,55 @@ export function PaginaCombustivel() {
   /**
    * salvarAbastecimento
    * Salva o registro de abastecimento no Firestore.
-   * Calcula o consumo (KM/L) comparando com o último abastecimento.
+   * Suporta submissão via submit do formulário (compatível com mobile).
    */
-  const salvarAbastecimento = async () => {
-    const km = parseFloat(kmAtual.replace(',', '.')) || 0;
-    const preco = parseFloat(precoPorLitro.replace(',', '.')) || 0;
-    const total = parseFloat(valorTotal.replace(',', '.')) || 0;
-    const litros = preco > 0 ? total / preco : 0;
+  const salvarAbastecimento = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
 
-    // Calcula consumo (KM/L) comparando com o abastecimento mais recente.
-    let consumo: number | null = null;
-    if (abastecimentos.length > 0) {
-      const ultimo = abastecimentos[0]; // Mais recente (ordenado desc).
-      const kmPercorridos = km - ultimo.kmAtual;
-      if (kmPercorridos > 0 && litros > 0) {
-        consumo = kmPercorridos / litros;
+    try {
+      const km = parseFloat(kmAtual.replace(',', '.')) || 0;
+      const preco = parseFloat(precoPorLitro.replace(',', '.')) || 0;
+      const total = parseFloat(valorTotal.replace(',', '.')) || 0;
+      const litros = preco > 0 ? total / preco : 0;
+
+      // Calcula consumo (KM/L) comparando com o abastecimento mais recente.
+      let consumo: number | null = null;
+      if (abastecimentos.length > 0) {
+        const ultimo = abastecimentos[0]; // Mais recente (ordenado desc).
+        const kmPercorridos = km - ultimo.kmAtual;
+        if (kmPercorridos > 0 && litros > 0) {
+          consumo = kmPercorridos / litros;
+        }
       }
+
+      await addDoc(collection(banco, 'combustivel'), {
+        kmAtual: km,
+        precoPorLitro: preco,
+        valorTotal: total,
+        litros,
+        data: serverTimestamp(),
+        localizacao,
+        comprovante,
+        consumo,
+      });
+
+      // Limpa formulário.
+      setKmAtual('');
+      setPrecoPorLitro('');
+      setValorTotal('');
+      setLocalizacao('');
+      setComprovante('');
+
+      // Fecha o teclado virtual do celular se algum input estiver focado
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+
+      // Fecha o modal.
+      setModalAberto(false);
+    } catch (erro) {
+      console.error('Erro ao salvar abastecimento:', erro);
     }
-
-    await addDoc(collection(banco, 'combustivel'), {
-      kmAtual: km,
-      precoPorLitro: preco,
-      valorTotal: total,
-      litros,
-      data: serverTimestamp(),
-      localizacao,
-      comprovante,
-      consumo,
-    });
-
-    // Limpa formulário.
-    setKmAtual('');
-    setPrecoPorLitro('');
-    setValorTotal('');
-    setLocalizacao('');
-    setComprovante('');
-    setModalAberto(false);
   };
 
   /**
@@ -233,11 +246,11 @@ export function PaginaCombustivel() {
 
       {/* Barra de ações */}
       <div className="flex flex-wrap items-center gap-3">
-        <button onClick={() => setModalAberto(true)} className="botao-primario">
+        <button onClick={() => setModalAberto(true)} className="botao-primario" type="button">
           <Plus size={18} />
           Registrar abastecimento
         </button>
-        <button onClick={gerarPdf} className="botao-secundario">
+        <button onClick={gerarPdf} className="botao-secundario" type="button">
           <FileText size={18} />
           Exportar PDF
         </button>
@@ -268,6 +281,7 @@ export function PaginaCombustivel() {
                     <button
                       onClick={() => deleteDoc(doc(banco, 'combustivel', a.id))}
                       className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      type="button"
                     >
                       <Trash2 size={16} />
                     </button>
@@ -310,7 +324,7 @@ export function PaginaCombustivel() {
 
       {/* Modal de abastecimento */}
       <Modal aberto={modalAberto} onFechar={() => setModalAberto(false)} titulo="Registrar abastecimento">
-        <div className="space-y-4">
+        <form onSubmit={salvarAbastecimento} className="space-y-4">
           <div>
             <label className="rotulo">KM atual do veículo</label>
             <input
@@ -321,6 +335,7 @@ export function PaginaCombustivel() {
               onChange={(e) => setKmAtual(e.target.value)}
               className="campo-entrada"
               autoFocus
+              required
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -333,6 +348,7 @@ export function PaginaCombustivel() {
                 value={precoPorLitro}
                 onChange={(e) => setPrecoPorLitro(e.target.value)}
                 className="campo-entrada"
+                required
               />
             </div>
             <div>
@@ -344,6 +360,7 @@ export function PaginaCombustivel() {
                 value={valorTotal}
                 onChange={(e) => setValorTotal(e.target.value)}
                 className="campo-entrada"
+                required
               />
             </div>
           </div>
@@ -364,7 +381,7 @@ export function PaginaCombustivel() {
                 value={localizacao}
                 className="campo-entrada flex-1"
               />
-              <button onClick={obterLocal} className="botao-secundario px-3">
+              <button onClick={obterLocal} className="botao-secundario px-3" type="button">
                 <MapPin size={18} />
               </button>
             </div>
@@ -392,10 +409,10 @@ export function PaginaCombustivel() {
               )}
             </div>
           </div>
-          <button onClick={salvarAbastecimento} className="botao-primario w-full">
+          <button type="submit" className="botao-primario w-full">
             Salvar abastecimento
           </button>
-        </div>
+        </form>
       </Modal>
     </div>
   );
