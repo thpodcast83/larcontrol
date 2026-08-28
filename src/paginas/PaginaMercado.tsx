@@ -1,3 +1,10 @@
+/**
+ * PaginaMercado.tsx
+ * -----------------------------------------------------------------------------
+ * Módulo de Mercado do LarControl - Compras de Rancho e Gastos Extras.
+ * -----------------------------------------------------------------------------
+ */
+
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   collection,
