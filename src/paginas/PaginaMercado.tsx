@@ -17,8 +17,6 @@ import {
   writeBatch,
   serverTimestamp,
   getDocs,
-  limit,
-  where,
 } from 'firebase/firestore';
 import { banco } from '@/firebase';
 import { useAuth } from '@/contextos/ContextoAuth';
@@ -153,10 +151,10 @@ export function PaginaMercado() {
   const [modalAberto, setModalAberto] = useState(false);
   const [salvandoCompra, setSalvandoCompra] = useState(false);
 
-  // Busca na base geral de produtos (5000 itens)
+  // Cache local dos produtos do banco para busca instantânea e sem gastar cota
+  const [catalogoGeral, setCatalogoGeral] = useState<any[]>([]);
+  const [carregandoCatalogo, setCarregandoCatalogo] = useState(true);
   const [termoBusca, setTermoBusca] = useState('');
-  const [resultadosBanco, setResultadosBanco] = useState<any[]>([]);
-  const [buscando, setBuscando] = useState(false);
 
   const [novoNome, setNovoNome] = useState('');
   const [novaQtd, setNovaQtd] = useState('1');
@@ -188,41 +186,34 @@ export function PaginaMercado() {
     return () => cancelar();
   }, []);
 
-  // 2. Busca eficiente no Banco Geral (mercado/despensa) ao digitar na barra de pesquisa
+  // 2. Carrega o catálogo geral apenas UMA VEZ ao abrir a página (economiza cota do Firebase)
   useEffect(() => {
-    const termo = termoBusca.trim().toLowerCase();
-    if (!termo) {
-      setResultadosBanco([]);
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      setBuscando(true);
+    async function carregarCatalogo() {
       try {
-        const qMercado = query(
-          collection(banco, 'mercado'),
-          limit(10)
-        );
-        const snap = await getDocs(qMercado);
-        const filtrados: any[] = [];
-        
-        snap.forEach((docSnap) => {
+        const snapshot = await getDocs(collection(banco, 'despensa')); // ou 'mercado' conforme sua base
+        const lista: any[] = [];
+        snapshot.forEach((docSnap) => {
           const d = docSnap.data();
-          if (d.nome && d.nome.toLowerCase().includes(termo)) {
-            filtrados.push({ id: docSnap.id, ...d });
-          }
+          lista.push({ id: docSnap.id, ...d });
         });
-
-        setResultadosBanco(filtrados);
+        setCatalogoGeral(lista);
       } catch (err) {
-        console.error('Erro na busca do banco:', err);
+        console.error('Erro ao carregar catálogo:', err);
       } finally {
-        setBuscando(false);
+        setCarregandoCatalogo(false);
       }
-    }, 300);
+    }
+    carregarCatalogo();
+  }, []);
 
-    return () => clearTimeout(timer);
-  }, [termoBusca]);
+  // Filtro local instantâneo na memória (sem novas requisições ao Firestore)
+  const resultadosBusca = useMemo(() => {
+    const termo = termoBusca.trim().toLowerCase();
+    if (!termo) return [];
+    return catalogoGeral
+      .filter((item) => (item.nome || '').toLowerCase().includes(termo))
+      .slice(0, 15); // Limita a 15 resultados visuais para manter a interface limpa
+  }, [catalogoGeral, termoBusca]);
 
   const itensModo = useMemo(() => itensCarrinho.filter((i) => i.modo === modo), [itensCarrinho, modo]);
 
@@ -235,15 +226,14 @@ export function PaginaMercado() {
   const saldo = teto - totalGasto;
   const percentual = teto > 0 ? Math.min((totalGasto / teto) * 100, 100) : 0;
 
-  // Função para adicionar produto da busca diretamente ao carrinho
   const adicionarAoCarrinhoDoBanco = async (prod: any) => {
     const qtd = prod.quantidade || 1;
-    const preco = prod.precoUnitario || 0;
+    const preco = prod.precoUnitario || prod.ultimoPreco || 0;
     const unidade = prod.unidade || 'un';
     const subtotal = unidade === 'g' ? (qtd / 1000) * preco : qtd * preco;
 
     await addDoc(collection(banco, 'carrinho_atual'), {
-      nome: prod.nome,
+      nome: prod.nome || 'Produto',
       quantidade: qtd,
       unidade,
       precoUnitario: preco,
@@ -255,7 +245,6 @@ export function PaginaMercado() {
     });
 
     setTermoBusca('');
-    setResultadosBanco([]);
   };
 
   const adicionarManual = async (e?: React.FormEvent) => {
@@ -393,7 +382,6 @@ export function PaginaMercado() {
         </button>
       </div>
 
-      {/* Busca no Banco de Dados dos 5000 Itens */}
       <div className="relative">
         <label className="text-xs font-semibold text-slate-500 mb-1 block">
           Buscar no banco de dados para colocar no carrinho:
@@ -402,22 +390,20 @@ export function PaginaMercado() {
           <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Digite o nome do produto (ex: leite, arroz)..."
+            placeholder={carregandoCatalogo ? 'Carregando base de dados...' : 'Digite o nome do produto (ex: leite, arroz)...'}
+            disabled={carregandoCatalogo}
             value={termoBusca}
             onChange={(e) => setTermoBusca(e.target.value)}
             className="campo-entrada pl-10"
           />
         </div>
 
-        {/* Dropdown com os Resultados da Busca no Banco */}
         {termoBusca.trim() !== '' && (
           <div className="absolute z-20 left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-            {buscando ? (
-              <p className="p-3 text-xs text-slate-400 text-center">Buscando no banco...</p>
-            ) : resultadosBanco.length === 0 ? (
-              <p className="p-3 text-xs text-slate-400 text-center">Nenhum produto encontrado no banco de dados.</p>
+            {resultadosBusca.length === 0 ? (
+              <p className="p-3 text-xs text-slate-400 text-center">Nenhum produto encontrado com esse nome.</p>
             ) : (
-              resultadosBanco.map((prod) => (
+              resultadosBusca.map((prod) => (
                 <div
                   key={prod.id}
                   onClick={() => adicionarAoCarrinhoDoBanco(prod)}
@@ -426,7 +412,7 @@ export function PaginaMercado() {
                   <div>
                     <p className="font-semibold text-sm text-slate-800 dark:text-slate-200">{prod.nome}</p>
                     <p className="text-xs text-slate-400">
-                      {prod.quantidade || 1} {prod.unidade || 'un'} — {formatarMoeda(prod.precoUnitario || 0)}
+                      {prod.quantidade || 1} {prod.unidade || 'un'} — {formatarMoeda(prod.precoUnitario || prod.ultimoPreco || 0)}
                     </p>
                   </div>
                   <button className="text-teal-600 dark:text-teal-400 flex items-center gap-1 text-xs font-bold">
@@ -454,7 +440,6 @@ export function PaginaMercado() {
         </button>
       </div>
 
-      {/* Lista de Produtos do Carrinho Atual */}
       <div className="space-y-3">
         <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300">
           Itens no Carrinho ({itensModo.length})
