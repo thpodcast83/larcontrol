@@ -20,23 +20,14 @@ import {
 import { banco } from '@/firebase';
 import { useAuth } from '@/contextos/ContextoAuth';
 import type { ItemCarrinho, ItemDespensa } from '@/tipos';
-import { formatarMoeda, formatarData } from '@/utils/utilFormato';
+import { formatarMoeda } from '@/utils/utilFormato';
 import { obterGeolocalizacao } from '@/utils/utilGeolocalizacao';
-import { enviarNotificacao, solicitarPermissaoNotificacao } from '@/utils/utilNotificacao';
-import { gerarPdfGenerico } from '@/utils/utilPdf';
 import { Modal } from '@/componentes/Modal';
-import { BotaoImportar } from '@/componentes/BotaoImportar';
-import type { ItemImportado } from '@/utils/utilParser';
 import {
   ShoppingCart,
   Plus,
   Trash2,
   MapPin,
-  TrendingUp,
-  TrendingDown,
-  FileText,
-  Package,
-  AlertCircle,
   Wallet,
   Search,
   CheckCircle,
@@ -44,18 +35,14 @@ import {
   Edit2,
   Save,
   Tag,
+  Layers,
 } from 'lucide-react';
 
-/**
- * Componente auxiliar para editar diretamente o item encontrado na busca
- * definindo quantidade, unidade (un, kg, g) e preço antes de adicionar ao carrinho.
- */
 function ItemBuscaEditavel({ item }: { item: ItemCarrinho }) {
   const [qtdEditada, setQtdEditada] = useState(item.quantidade ? item.quantidade.toString() : '1');
   const [unidadeEditada, setUnidadeEditada] = useState<'un' | 'kg' | 'g'>(item.unidade || 'un');
   const [precoEditado, setPrecoEditado] = useState(item.precoUnitario ? item.precoUnitario.toString() : '');
 
-  // Converte valores para cálculo em tempo real
   const qNum = parseFloat(qtdEditada.replace(',', '.')) || 0;
   const pNum = parseFloat(precoEditado.replace(',', '.')) || 0;
   
@@ -105,7 +92,6 @@ function ItemBuscaEditavel({ item }: { item: ItemCarrinho }) {
           <input
             type="text"
             inputMode="decimal"
-            placeholder={unidadeEditada === 'kg' ? 'Ex: 0.450' : 'Ex: 1'}
             value={qtdEditada}
             onChange={(e) => setQtdEditada(e.target.value)}
             className="campo-entrada text-sm py-1.5 px-2"
@@ -126,13 +112,10 @@ function ItemBuscaEditavel({ item }: { item: ItemCarrinho }) {
         </div>
 
         <div>
-          <label className="text-[10px] text-slate-400 block">
-            {unidadeEditada === 'un' ? 'Preço Unitário (R$)' : 'Preço por kg (R$)'}
-          </label>
+          <label className="text-[10px] text-slate-400 block">Preço Unitário (R$)</label>
           <input
             type="text"
             inputMode="decimal"
-            placeholder="0,00"
             value={precoEditado}
             onChange={(e) => setPrecoEditado(e.target.value)}
             className="campo-entrada text-sm py-1.5 px-2"
@@ -145,7 +128,7 @@ function ItemBuscaEditavel({ item }: { item: ItemCarrinho }) {
             className="botao-primario text-xs w-full py-2"
             type="button"
           >
-            Adicionar no Carrinho
+            Atualizar Item
           </button>
         </div>
       </div>
@@ -156,17 +139,14 @@ function ItemBuscaEditavel({ item }: { item: ItemCarrinho }) {
 export function PaginaMercado() {
   const { usuario } = useAuth();
 
-  // --- Estados do módulo ---
   const [itens, setItens] = useState<ItemCarrinho[]>([]);
   const [despensa, setDespensa] = useState<ItemDespensa[]>([]);
   const [modo, setModo] = useState<'rancho' | 'extras'>('rancho');
   
-  // Teto de Gastos + Edição
   const [teto, setTeto] = useState<number>(0);
   const [editandoTeto, setEditandoTeto] = useState(false);
   const [tetoInput, setTetoInput] = useState('');
 
-  // Dados da Compra e Desconto Global
   const [dataCompra, setDataCompra] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
@@ -174,15 +154,12 @@ export function PaginaMercado() {
   const [localizacao, setLocalizacao] = useState('');
   const [descontoGlobal, setDescontoGlobal] = useState('');
   const [modalAberto, setModalAberto] = useState(false);
-  const [alertaDespensa, setAlertaDespensa] = useState<string | null>(null);
   const [salvandoCompra, setSalvandoCompra] = useState(false);
 
-  // Busca e Performance Mobile
   const [buscaInput, setBuscaInput] = useState('');
   const [buscaDebounced, setBuscaDebounced] = useState('');
-  const [limiteExibicao, setLimiteExibicao] = useState(30);
+  const [limiteExibicao, setLimiteExibicao] = useState(20);
 
-  // Form de novo item
   const [novoNome, setNovoNome] = useState('');
   const [novaQtd, setNovaQtd] = useState('1');
   const [novaUnidade, setNovaUnidade] = useState<'un' | 'kg' | 'g'>('un');
@@ -191,7 +168,7 @@ export function PaginaMercado() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setBuscaDebounced(buscaInput);
-      setLimiteExibicao(30);
+      setLimiteExibicao(20);
     }, 300);
     return () => clearTimeout(timer);
   }, [buscaInput]);
@@ -243,12 +220,6 @@ export function PaginaMercado() {
     return () => cancelar();
   }, []);
 
-  const mapaDespensa = useMemo(() => {
-    const map = new Map<string, ItemDespensa>();
-    despensa.forEach((item) => map.set(item.nome.toLowerCase(), item));
-    return map;
-  }, [despensa]);
-
   const itensModo = useMemo(() => itens.filter((i) => i.modo === modo), [itens, modo]);
 
   const { totalBruto, totalQuantidade } = useMemo(() => {
@@ -268,7 +239,6 @@ export function PaginaMercado() {
   const saldo = teto - totalGasto;
   const percentual = teto > 0 ? Math.min((totalGasto / teto) * 100, 100) : 0;
 
-  // Busca atualizada para filtrar por nome, preço unitário ou subtotal
   const itensFiltrados = useMemo(() => {
     const termo = buscaDebounced.toLowerCase().trim();
     if (!termo) return itensModo;
@@ -283,6 +253,15 @@ export function PaginaMercado() {
   const itensExibidos = useMemo(() => {
     return itensFiltrados.slice(0, limiteExibicao);
   }, [itensFiltrados, limiteExibicao]);
+
+  const limparCarrinhoInteiro = async () => {
+    if (!confirm('Deseja realmente remover todos os itens deste modo do carrinho?')) return;
+    const lote = writeBatch(banco);
+    itensModo.forEach((item) => {
+      lote.delete(doc(banco, 'mercado', item.id));
+    });
+    await lote.commit();
+  };
 
   const salvarTeto = () => {
     const valor = parseFloat(tetoInput.replace(',', '.'));
@@ -301,11 +280,6 @@ export function PaginaMercado() {
     }
   };
 
-  const calcularSubtotal = (qtd: number, unidade: string, preco: number): number => {
-    if (unidade === 'g') return (qtd / 1000) * preco;
-    return qtd * preco;
-  };
-
   const adicionarItem = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!novoNome.trim() || !novoPreco) return;
@@ -314,7 +288,7 @@ export function PaginaMercado() {
     const nomeItem = novoNome.trim();
     const qtd = parseFloat(novaQtd.replace(',', '.')) || 0;
     const preco = parseFloat(novoPreco.replace(',', '.')) || 0;
-    const subtotal = calcularSubtotal(qtd, novaUnidade, preco);
+    const subtotal = novaUnidade === 'g' ? (qtd / 1000) * preco : qtd * preco;
 
     setNovoNome('');
     setNovaQtd('1');
@@ -334,17 +308,11 @@ export function PaginaMercado() {
     });
   };
 
-  const removerItem = async (id: string) => {
-    await deleteDoc(doc(banco, 'mercado', id));
-  };
-
-  // --- AÇÃO: FINALIZAR COMPRA E SALVAR NO HISTÓRICO ---
   const finalizarCompra = async () => {
     if (itensModo.length === 0) return;
     setSalvandoCompra(true);
 
     try {
-      // 1. Grava no histórico de compras finalizadas
       await addDoc(collection(banco, 'historico_compras'), {
         dataCompra,
         mercado: mercado.trim() || 'Mercado não informado',
@@ -366,7 +334,6 @@ export function PaginaMercado() {
         })),
       });
 
-      // 2. Limpa os itens do carrinho atual
       const lote = writeBatch(banco);
       itensModo.forEach((item) => {
         lote.delete(doc(banco, 'mercado', item.id));
@@ -390,36 +357,38 @@ export function PaginaMercado() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
           <ShoppingCart className="text-primaria-700" />
-          Mercado
+          Mercado / Carrinho
         </h1>
         <p className="text-slate-500 text-sm mt-1">
-          Registre suas compras em tempo real e finalize para guardar o histórico.
+          Gerencie os produtos adicionados, ajuste valores e finalize sua compra.
         </p>
       </div>
 
-      {/* Card de Total Acumulado com Desconto Global aplicado */}
       <div className="cartao-destaque bg-gradient-to-r from-teal-800 to-teal-950 text-white flex items-center justify-between p-5 rounded-2xl shadow-lg">
         <div>
           <span className="text-teal-200 text-xs font-semibold uppercase tracking-wider">
-            Total Líquido {modo === 'rancho' ? 'do Rancho' : 'dos Gastos Extras'}
+            Total do Carrinho ({modo === 'rancho' ? 'Rancho' : 'Extras'})
           </span>
           <h2 className="text-3xl font-extrabold text-white mt-0.5">
             {formatarMoeda(totalGasto)}
           </h2>
-          {dGlobalNum > 0 && (
-            <p className="text-xs text-teal-200 mt-1">
-              Bruto: {formatarMoeda(totalBruto)} | Desconto Global: -{formatarMoeda(dGlobalNum)}
-            </p>
-          )}
         </div>
-        <div className="text-right">
+        <div className="flex items-center gap-2">
           <span className="badge bg-teal-700/60 text-teal-100 text-xs px-3 py-1 rounded-full font-medium">
-            {itensModo.length} itens ({totalQuantidade} un/kg)
+            {itensModo.length} itens cadastrados
           </span>
+          {itensModo.length > 0 && (
+            <button
+              onClick={limparCarrinhoInteiro}
+              className="bg-red-600/80 hover:bg-red-600 text-white p-2 rounded-xl text-xs font-bold transition-all"
+              title="Limpar todo o carrinho"
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Troca de Modo */}
       <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
         <button
           onClick={() => setModo('rancho')}
@@ -439,7 +408,6 @@ export function PaginaMercado() {
         </button>
       </div>
 
-      {/* Card de Teto de Gastos Com Alteração/Edição */}
       <div className="cartao-destaque">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -487,14 +455,13 @@ export function PaginaMercado() {
             <div className="flex justify-between mt-2 text-sm">
               <span className="text-slate-600 dark:text-slate-400">{formatarMoeda(totalGasto)} gastos</span>
               <span className="text-slate-600 dark:text-slate-400">
-                Saldo: <strong className={saldo < 0 ? 'text-red-600' : 'text-green-600'}>{formatarMoeda(saldo)}</strong> / {formatarMoeda(teto)} teto
+                Saldo: <strong className={saldo < 0 ? 'text-red-600' : 'text-green-600'}>{formatarMoeda(saldo)}</strong>
               </span>
             </div>
           </div>
         )}
       </div>
 
-      {/* Informações da Compra: Data, Mercado, Geolocalização e Desconto Global */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div>
           <label className="rotulo flex items-center gap-1">
@@ -547,15 +514,11 @@ export function PaginaMercado() {
         </div>
       </div>
 
-      {/* Botões de Ação */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <button onClick={() => setModalAberto(true)} className="botao-primario">
-            <Plus size={18} /> Adicionar item
-          </button>
-        </div>
+        <button onClick={() => setModalAberto(true)} className="botao-primario">
+          <Plus size={18} /> Adicionar item
+        </button>
 
-        {/* Botão Principal: Finalizar Compra */}
         <button
           onClick={finalizarCompra}
           disabled={salvandoCompra || itensModo.length === 0}
@@ -566,7 +529,6 @@ export function PaginaMercado() {
         </button>
       </div>
 
-      {/* Busca */}
       <div className="relative">
         <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
         <input
@@ -578,20 +540,32 @@ export function PaginaMercado() {
         />
       </div>
 
-      {/* Lista do Carrinho Atual com edição de quantidade, peso e preço */}
+      {/* Lista com Paginação / Limite para evitar travamentos */}
       <div className="space-y-3">
         {itensExibidos.length === 0 ? (
           <div className="cartao text-center py-12 text-slate-400">
             <p>Nenhum produto encontrado no carrinho.</p>
           </div>
         ) : (
-          itensExibidos.map((item) => (
-            <ItemBuscaEditavel key={item.id} item={item} />
-          ))
+          <>
+            {itensExibidos.map((item) => (
+              <ItemBuscaEditavel key={item.id} item={item} />
+            ))}
+
+            {itensFiltrados.length > limiteExibicao && (
+              <div className="text-center pt-4">
+                <button
+                  onClick={() => setLimiteExibicao((prev) => prev + 20)}
+                  className="botao-secundario text-xs py-2 px-4"
+                >
+                  Carregar mais itens ({limiteExibicao} de {itensFiltrados.length})
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {/* Modal Adicionar */}
       <Modal aberto={modalAberto} onFechar={() => setModalAberto(false)} titulo="Adicionar item">
         <form onSubmit={adicionarItem} className="space-y-4">
           <div>
@@ -604,11 +578,6 @@ export function PaginaMercado() {
               className="campo-entrada"
               required
             />
-            <datalist id="sugestoes-despensa">
-              {despensa.map((d) => (
-                <option key={d.id} value={d.nome} />
-              ))}
-            </datalist>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
