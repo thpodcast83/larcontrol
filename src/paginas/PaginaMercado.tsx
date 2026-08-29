@@ -227,12 +227,9 @@ export function PaginaMercado() {
   const percentual = teto > 0 ? Math.min((totalGasto / teto) * 100, 100) : 0;
 
   const buscarGPS = async () => {
-    const resultado = await obterGeolocalizacao();
-    if (resultado) {
-      const textoLocalizacao = typeof resultado === 'string'
-        ? resultado
-        : (resultado.endereco || resultado.cidade || JSON.stringify(resultado));
-      setLocalizacao(textoLocalizacao);
+    const endereco = await obterGeolocalizacao();
+    if (endereco) {
+      setLocalizacao(endereco);
     }
   };
 
