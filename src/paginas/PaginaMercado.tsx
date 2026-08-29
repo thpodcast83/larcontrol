@@ -227,9 +227,12 @@ export function PaginaMercado() {
   const percentual = teto > 0 ? Math.min((totalGasto / teto) * 100, 100) : 0;
 
   const buscarGPS = async () => {
-    const endereco = await obterGeolocalizacao();
-    if (endereco) {
-      setLocalizacao(endereco);
+    try {
+      const resultado = await obterGeolocalizacao();
+      setLocalizacao(resultado.texto);
+    } catch (erro) {
+      console.error(erro);
+      alert('Não foi possível obter a localização atual.');
     }
   };
 
