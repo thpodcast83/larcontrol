@@ -4,8 +4,7 @@
  * Módulo de Mercado do LarControl - Compras de Rancho e Gastos Extras.
  * -----------------------------------------------------------------------------
  */
-
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   collection,
   onSnapshot,
@@ -15,8 +14,8 @@ import {
   deleteDoc,
   updateDoc,
   doc,
-  serverTimestamp,
   writeBatch,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { banco } from '@/firebase';
 import { useAuth } from '@/contextos/ContextoAuth';
@@ -39,9 +38,119 @@ import {
   Package,
   AlertCircle,
   Wallet,
-  Pencil,
-  Check,
+  Search,
+  CheckCircle,
+  Calendar,
+  Edit2,
+  Save,
 } from 'lucide-react';
+
+/**
+ * Componente auxiliar para editar diretamente o item encontrado na busca
+ * definindo quantidade, unidade (un, kg, g) e preço antes de atualizar.
+ */
+function ItemBuscaEditavel({ item }: { item: ItemCarrinho }) {
+  const [qtdEditada, setQtdEditada] = useState(item.quantidade ? item.quantidade.toString() : '1');
+  const [unidadeEditada, setUnidadeEditada] = useState<'un' | 'kg' | 'g'>(item.unidade || 'un');
+  const [precoEditado, setPrecoEditado] = useState(item.precoUnitario ? item.precoUnitario.toString() : '');
+
+  // Converte valores para cálculo em tempo real
+  const qNum = parseFloat(qtdEditada.replace(',', '.')) || 0;
+  const pNum = parseFloat(precoEditado.replace(',', '.')) || 0;
+  
+  let subtotalCalculado = qNum * pNum;
+  if (unidadeEditada === 'g') {
+    subtotalCalculado = (qNum / 1000) * pNum;
+  }
+
+  const handleSalvarNoCarrinho = async () => {
+    if (pNum <= 0) {
+      alert('Informe um preço válido.');
+      return;
+    }
+
+    await updateDoc(doc(banco, 'mercado', item.id), {
+      quantidade: qNum,
+      unidade: unidadeEditada,
+      precoUnitario: pNum,
+      subtotal: subtotalCalculado,
+    });
+  };
+
+  const removerItem = async () => {
+    await deleteDoc(doc(banco, 'mercado', item.id));
+  };
+
+  return (
+    <div className="cartao flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold text-slate-900 dark:text-slate-100">{item.nome}</h3>
+          <p className="text-xs text-slate-400">Adicionado por {item.adicionadoPor}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-teal-600 dark:text-teal-400 font-bold">
+            Subtotal: {formatarMoeda(subtotalCalculado)}
+          </span>
+          <button onClick={removerItem} className="text-slate-400 hover:text-red-600" title="Excluir item">
+            <Trash2 size={18} />
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-center">
+        <div>
+          <label className="text-[10px] text-slate-400 block">Quantidade / Peso</label>
+          <input
+            type="text"
+            inputMode="decimal"
+            placeholder={unidadeEditada === 'kg' ? 'Ex: 0.450' : 'Ex: 1'}
+            value={qtdEditada}
+            onChange={(e) => setQtdEditada(e.target.value)}
+            className="campo-entrada text-sm py-1.5 px-2"
+          />
+        </div>
+
+        <div>
+          <label className="text-[10px] text-slate-400 block">Unidade</label>
+          <select
+            value={unidadeEditada}
+            onChange={(e) => setUnidadeEditada(e.target.value as 'un' | 'kg' | 'g')}
+            className="campo-entrada text-sm py-1.5 px-2"
+          >
+            <option value="un">Unidade (un)</option>
+            <option value="kg">Quilo (kg)</option>
+            <option value="g">Grama (g)</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="text-[10px] text-slate-400 block">
+            {unidadeEditada === 'un' ? 'Preço Unitário (R$)' : 'Preço por kg (R$)'}
+          </label>
+          <input
+            type="text"
+            inputMode="decimal"
+            placeholder="0,00"
+            value={precoEditado}
+            onChange={(e) => setPrecoEditado(e.target.value)}
+            className="campo-entrada text-sm py-1.5 px-2"
+          />
+        </div>
+
+        <div className="flex items-end h-full pt-4 sm:pt-0">
+          <button
+            onClick={handleSalvarNoCarrinho}
+            className="botao-primario text-xs w-full py-2"
+            type="button"
+          >
+            Atualizar Carrinho
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function PaginaMercado() {
   const { usuario } = useAuth();
@@ -50,49 +159,44 @@ export function PaginaMercado() {
   const [itens, setItens] = useState<ItemCarrinho[]>([]);
   const [despensa, setDespensa] = useState<ItemDespensa[]>([]);
   const [modo, setModo] = useState<'rancho' | 'extras'>('rancho');
+  
+  // Teto de Gastos + Edição
   const [teto, setTeto] = useState<number>(0);
+  const [editandoTeto, setEditandoTeto] = useState(false);
   const [tetoInput, setTetoInput] = useState('');
+
+  // Dados da Compra
+  const [dataCompra, setDataCompra] = useState<string>(
+    new Date().toISOString().split('T')[0]
+  );
   const [mercado, setMercado] = useState('');
   const [localizacao, setLocalizacao] = useState('');
   const [modalAberto, setModalAberto] = useState(false);
   const [alertaDespensa, setAlertaDespensa] = useState<string | null>(null);
+  const [salvandoCompra, setSalvandoCompra] = useState(false);
 
-  // Estado para controlar a edição do item selecionado
-  const [itemEmEdicao, setItemEmEdicao] = useState<ItemCarrinho | null>(null);
+  // Busca e Performance Mobile
+  const [buscaInput, setBuscaInput] = useState('');
+  const [buscaDebounced, setBuscaDebounced] = useState('');
+  const [limiteExibicao, setLimiteExibicao] = useState(30);
 
-  // Campos do formulário de novo/editado item
+  // Form de novo item
   const [novoNome, setNovoNome] = useState('');
   const [novaQtd, setNovaQtd] = useState('1');
   const [novaUnidade, setNovaUnidade] = useState<'un' | 'kg' | 'g'>('un');
   const [novoPreco, setNovoPreco] = useState('');
 
-  /**
-   * Escuta em tempo real do Firestore
-   */
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setBuscaDebounced(buscaInput);
+      setLimiteExibicao(30);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [buscaInput]);
+
   useEffect(() => {
     const q = query(collection(banco, 'mercado'), orderBy('adicionadoEm', 'desc'));
-
     const cancelar = onSnapshot(q, (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === 'added' && !snapshot.metadata.hasPendingWrites) {
-          const dados = change.doc.data();
-          const adicionadoPor = dados.adicionadoPor || 'Membro da casa';
-          const nomeItem = dados.nome || 'Novo item';
-          const subtotal = dados.subtotal || 0;
-
-          if (usuario?.nome && adicionadoPor.toLowerCase() !== usuario.nome.toLowerCase()) {
-            try {
-              enviarNotificacao(
-                '🛒 Novo item no carrinho!',
-                `${adicionadoPor} acabou de adicionar: ${nomeItem} (${formatarMoeda(subtotal)})`
-              );
-            } catch (err) {
-              console.warn('Falha ao exibir notificação:', err);
-            }
-          }
-        }
-      });
-
       const lista: ItemCarrinho[] = [];
       snapshot.forEach((docSnap) => {
         const dados = docSnap.data();
@@ -111,9 +215,8 @@ export function PaginaMercado() {
       });
       setItens(lista);
     });
-
     return () => cancelar();
-  }, [usuario?.nome]);
+  }, []);
 
   useEffect(() => {
     const q = query(collection(banco, 'despensa'));
@@ -138,23 +241,43 @@ export function PaginaMercado() {
     return () => cancelar();
   }, []);
 
-  useEffect(() => {
-    solicitarPermissaoNotificacao();
-  }, []);
+  const mapaDespensa = useMemo(() => {
+    const map = new Map<string, ItemDespensa>();
+    despensa.forEach((item) => map.set(item.nome.toLowerCase(), item));
+    return map;
+  }, [despensa]);
 
-  // --- Cálculos derivados ---
-  const itensModo = itens.filter((i) => i.modo === modo);
-  const totalProdutos = itensModo.length;
-  const totalUnidades = itensModo.reduce((acc, i) => acc + i.quantidade, 0);
-  const totalGasto = itensModo.reduce((acc, i) => acc + i.subtotal, 0);
+  const itensModo = useMemo(() => itens.filter((i) => i.modo === modo), [itens, modo]);
+
+  const { totalGasto, totalQuantidade } = useMemo(() => {
+    return itensModo.reduce(
+      (acc, i) => {
+        acc.totalGasto += i.subtotal;
+        acc.totalQuantidade += i.quantidade;
+        return acc;
+      },
+      { totalGasto: 0, totalQuantidade: 0 }
+    );
+  }, [itensModo]);
+
   const saldo = teto - totalGasto;
   const percentual = teto > 0 ? Math.min((totalGasto / teto) * 100, 100) : 0;
 
-  const definirTeto = () => {
+  const itensFiltrados = useMemo(() => {
+    const termo = buscaDebounced.toLowerCase().trim();
+    if (!termo) return itensModo;
+    return itensModo.filter((item) => item.nome.toLowerCase().includes(termo));
+  }, [itensModo, buscaDebounced]);
+
+  const itensExibidos = useMemo(() => {
+    return itensFiltrados.slice(0, limiteExibicao);
+  }, [itensFiltrados, limiteExibicao]);
+
+  const salvarTeto = () => {
     const valor = parseFloat(tetoInput.replace(',', '.'));
-    if (!isNaN(valor) && valor > 0) {
+    if (!isNaN(valor) && valor >= 0) {
       setTeto(valor);
-      setTetoInput('');
+      setEditandoTeto(false);
     }
   };
 
@@ -172,153 +295,80 @@ export function PaginaMercado() {
     return qtd * preco;
   };
 
-  const abrirModalNovo = () => {
-    setItemEmEdicao(null);
-    setNovoNome('');
-    setNovaQtd('1');
-    setNovaUnidade('un');
-    setNovoPreco('');
-    setModalAberto(true);
-  };
-
-  const abrirModalEditar = (item: ItemCarrinho) => {
-    setItemEmEdicao(item);
-    setNovoNome(item.nome);
-    setNovaQtd(item.quantidade.toString());
-    setNovaUnidade(item.unidade);
-    setNovoPreco(item.precoUnitario.toString());
-    setModalAberto(true);
-  };
-
-  const salvarItem = async (e?: React.FormEvent) => {
+  const adicionarItem = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!novoNome.trim() || !novoPreco) return;
 
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
-
     setModalAberto(false);
-
     const nomeItem = novoNome.trim();
     const qtd = parseFloat(novaQtd.replace(',', '.')) || 0;
     const preco = parseFloat(novoPreco.replace(',', '.')) || 0;
     const subtotal = calcularSubtotal(qtd, novaUnidade, preco);
 
-    try {
-      if (itemEmEdicao) {
-        // Atualiza o item existente
-        await updateDoc(doc(banco, 'mercado', itemEmEdicao.id), {
-          nome: nomeItem,
-          quantidade: qtd,
-          unidade: novaUnidade,
-          precoUnitario: preco,
-          subtotal,
-        });
-      } else {
-        // Cria um novo item
-        const itemDespensa = despensa.find(
-          (d) => d.nome.toLowerCase() === nomeItem.toLowerCase()
-        );
+    setNovoNome('');
+    setNovaQtd('1');
+    setNovoPreco('');
 
-        if (itemDespensa) {
-          const precoAnterior = itemDespensa.ultimoPreco || 0;
-          const status = itemDespensa.status || 'Fechado';
-          const qtdDespensa = itemDespensa.quantidade || 0;
-          const localAnterior = itemDespensa.ultimoLocal || 'local anterior';
-
-          let comparacao = '';
-          if (precoAnterior > 0) {
-            if (preco > precoAnterior) {
-              comparacao = `MAIS CARO que a última compra (era ${formatarMoeda(precoAnterior)} no ${localAnterior}).`;
-            } else if (preco < precoAnterior) {
-              comparacao = `MAIS BARATO que a última compra (era ${formatarMoeda(precoAnterior)} no ${localAnterior}).`;
-            } else {
-              comparacao = `Mesmo preço da última compra no ${localAnterior}.`;
-            }
-          }
-
-          setAlertaDespensa(
-            `No mês anterior você comprou ${qtdDespensa} ${itemDespensa.unidade} de "${nomeItem}" a ${formatarMoeda(precoAnterior)} no ${localAnterior}. ` +
-            `Status atual na despensa: ${qtdDespensa} ${itemDespensa.unidade} (${status}). ${comparacao}`
-          );
-        } else {
-          setAlertaDespensa(null);
-        }
-
-        await addDoc(collection(banco, 'mercado'), {
-          nome: nomeItem,
-          quantidade: qtd,
-          unidade: novaUnidade,
-          precoUnitario: preco,
-          subtotal,
-          modo,
-          mercado: mercado || 'Não informado',
-          adicionadoPor: usuario?.nome || 'Usuário',
-          adicionadoEm: serverTimestamp(),
-          localizacao,
-        });
-      }
-    } catch (erro) {
-      console.error("Erro ao salvar produto:", erro);
-    }
+    await addDoc(collection(banco, 'mercado'), {
+      nome: nomeItem,
+      quantidade: qtd,
+      unidade: novaUnidade,
+      precoUnitario: preco,
+      subtotal,
+      modo,
+      mercado: mercado || 'Não informado',
+      adicionadoPor: usuario?.nome || 'Usuário',
+      adicionadoEm: serverTimestamp(),
+      localizacao,
+    });
   };
 
   const removerItem = async (id: string) => {
     await deleteDoc(doc(banco, 'mercado', id));
   };
 
-  const importarItens = async (itensImportados: ItemImportado[]) => {
+  // --- AÇÃO: FINALIZAR COMPRA E SALVAR NO HISTÓRICO ---
+  const finalizarCompra = async () => {
+    if (itensModo.length === 0) return;
+    setSalvandoCompra(true);
+
     try {
-      const tamanhoLote = 500;
-      for (let i = 0; i < itensImportados.length; i += tamanhoLote) {
-        const loteItens = itensImportados.slice(i, i + tamanhoLote);
-        const batch = writeBatch(banco);
+      // 1. Grava no histórico de compras finalizadas
+      await addDoc(collection(banco, 'historico_compras'), {
+        dataCompra,
+        mercado: mercado.trim() || 'Mercado não informado',
+        localizacao: localizacao.trim() || 'Localização não informada',
+        tetoGasto: teto,
+        totalGasto,
+        modo,
+        totalItens: itensModo.length,
+        compradoPor: usuario?.nome || 'Usuário',
+        finalizadoEm: serverTimestamp(),
+        produtos: itensModo.map((i) => ({
+          nome: i.nome,
+          quantidade: i.quantidade,
+          unidade: i.unidade,
+          precoUnitario: i.precoUnitario,
+          subtotal: i.subtotal,
+        })),
+      });
 
-        loteItens.forEach((item) => {
-          const subtotal = calcularSubtotal(item.quantidade, item.unidade, item.preco);
-          const docRef = doc(collection(banco, 'mercado'));
-          batch.set(docRef, {
-            nome: item.nome,
-            quantidade: item.quantidade,
-            unidade: item.unidade || 'un',
-            precoUnitario: item.preco,
-            subtotal,
-            modo,
-            mercado: mercado || 'Importado',
-            adicionadoPor: usuario?.nome || 'Usuário',
-            adicionadoEm: serverTimestamp(),
-            localizacao,
-          });
-        });
+      // 2. Limpa os itens do carrinho atual
+      const lote = writeBatch(banco);
+      itensModo.forEach((item) => {
+        lote.delete(doc(banco, 'mercado', item.id));
+      });
+      await lote.commit();
 
-        await batch.commit();
-      }
+      alert('Compra finalizada e salva no Histórico com sucesso!');
+      setMercado('');
+      setLocalizacao('');
     } catch (erro) {
-      console.error("Erro ao importar lista para o Firestore:", erro);
+      console.error('Erro ao finalizar compra:', erro);
+      alert('Erro ao finalizar compra. Tente novamente.');
+    } finally {
+      setSalvandoCompra(false);
     }
-  };
-
-  const gerarPdf = () => {
-    const colunas = ['Produto', 'Qtd', 'Un.', 'Preço Unit.', 'Subtotal'];
-    const linhas = itensModo.map((i) => [
-      i.nome,
-      i.quantidade.toString(),
-      i.unidade,
-      formatarMoeda(i.precoUnitario),
-      formatarMoeda(i.subtotal),
-    ]);
-
-    gerarPdfGenerico(
-      {
-        titulo: modo === 'rancho' ? 'Relatório de Rancho (VR/VA)' : 'Relatório de Gastos Extras',
-        subtitulo: `Mercado: ${mercado || 'Não informado'} | Local: ${localizacao || 'N/A'}`,
-        colunas,
-        linhas,
-        total: `TOTAL: ${formatarMoeda(totalGasto)} (${totalProdutos} produtos)`,
-      },
-      `relatorio-${modo}-larcontrol.pdf`
-    );
   };
 
   return (
@@ -329,15 +379,33 @@ export function PaginaMercado() {
           Mercado
         </h1>
         <p className="text-slate-500 text-sm mt-1">
-          Compras de rancho e gastos extras com sincronização em tempo real.
+          Registre suas compras em tempo real e finalize para guardar o histórico.
         </p>
       </div>
 
+      {/* Card de Total Acumulado */}
+      <div className="cartao-destaque bg-gradient-to-r from-teal-800 to-teal-950 text-white flex items-center justify-between p-5 rounded-2xl shadow-lg">
+        <div>
+          <span className="text-teal-200 text-xs font-semibold uppercase tracking-wider">
+            Total {modo === 'rancho' ? 'do Rancho' : 'dos Gastos Extras'}
+          </span>
+          <h2 className="text-3xl font-extrabold text-white mt-0.5">
+            {formatarMoeda(totalGasto)}
+          </h2>
+        </div>
+        <div className="text-right">
+          <span className="badge bg-teal-700/60 text-teal-100 text-xs px-3 py-1 rounded-full font-medium">
+            {itensModo.length} itens ({totalQuantidade} un/kg)
+          </span>
+        </div>
+      </div>
+
+      {/* Troca de Modo */}
       <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
         <button
           onClick={() => setModo('rancho')}
           className={`flex-1 py-2.5 rounded-lg font-semibold text-sm transition-all ${
-            modo === 'rancho' ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-sm' : 'text-slate-500 dark:text-slate-400'
+            modo === 'rancho' ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-sm' : 'text-slate-500'
           }`}
         >
           Rancho (VR/VA)
@@ -345,39 +413,46 @@ export function PaginaMercado() {
         <button
           onClick={() => setModo('extras')}
           className={`flex-1 py-2.5 rounded-lg font-semibold text-sm transition-all ${
-            modo === 'extras' ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-sm' : 'text-slate-500 dark:text-slate-400'
+            modo === 'extras' ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-sm' : 'text-slate-500'
           }`}
         >
           Gastos Extras
         </button>
       </div>
 
+      {/* Card de Teto de Gastos Com Alteração/Edição */}
       <div className="cartao-destaque">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
             <Wallet size={18} className="text-teal-600 dark:text-teal-400" />
             Teto de Gastos
           </h2>
-          {teto > 0 && (
-            <span className="text-sm font-bold text-slate-600 dark:text-slate-300">
-              Saldo: <span className={saldo < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}>{formatarMoeda(saldo)}</span>
-            </span>
+          {teto > 0 && !editandoTeto && (
+            <button
+              onClick={() => {
+                setTetoInput(teto.toString());
+                setEditandoTeto(true);
+              }}
+              className="text-xs font-semibold text-teal-700 dark:text-teal-400 hover:underline flex items-center gap-1"
+            >
+              <Edit2 size={14} /> Alterar teto
+            </button>
           )}
         </div>
 
-        {teto === 0 ? (
+        {teto === 0 || editandoTeto ? (
           <div className="flex gap-2">
             <input
               type="text"
               inputMode="decimal"
-              placeholder="Valor total do ticket (ex: 1500)"
+              placeholder="Digite o novo valor (ex: 1500)"
               value={tetoInput}
               onChange={(e) => setTetoInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && definirTeto()}
+              onKeyDown={(e) => e.key === 'Enter' && salvarTeto()}
               className="campo-entrada flex-1"
             />
-            <button onClick={definirTeto} className="botao-primario">
-              Definir
+            <button onClick={salvarTeto} className="botao-primario">
+              <Save size={16} /> Salvar
             </button>
           </div>
         ) : (
@@ -392,24 +467,32 @@ export function PaginaMercado() {
             </div>
             <div className="flex justify-between mt-2 text-sm">
               <span className="text-slate-600 dark:text-slate-400">{formatarMoeda(totalGasto)} gastos</span>
-              <span className="text-slate-600 dark:text-slate-400">{formatarMoeda(teto)} teto</span>
+              <span className="text-slate-600 dark:text-slate-400">
+                Saldo: <strong className={saldo < 0 ? 'text-red-600' : 'text-green-600'}>{formatarMoeda(saldo)}</strong> / {formatarMoeda(teto)} teto
+              </span>
             </div>
-            {percentual >= 100 && (
-              <p className="text-red-600 dark:text-red-400 text-sm font-semibold mt-2 flex items-center gap-1">
-                <AlertCircle size={16} />
-                Teto de gastos ultrapassado!
-              </p>
-            )}
           </div>
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* Informações da Compra: Data, Mercado e Localização */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
-          <label className="rotulo">Nome do mercado</label>
+          <label className="rotulo flex items-center gap-1">
+            <Calendar size={14} /> Data da Compra
+          </label>
+          <input
+            type="date"
+            value={dataCompra}
+            onChange={(e) => setDataCompra(e.target.value)}
+            className="campo-entrada"
+          />
+        </div>
+        <div>
+          <label className="rotulo">Nome do Mercado</label>
           <input
             type="text"
-            placeholder="Ex: Supermercado Bom Preço"
+            placeholder="Ex: Carrefour"
             value={mercado}
             onChange={(e) => setMercado(e.target.value)}
             className="campo-entrada"
@@ -420,9 +503,9 @@ export function PaginaMercado() {
           <div className="flex gap-2">
             <input
               type="text"
-              readOnly
-              placeholder="Toque em obter localização"
+              placeholder="Localização"
               value={localizacao}
+              onChange={(e) => setLocalizacao(e.target.value)}
               className="campo-entrada flex-1"
             />
             <button onClick={obterLocal} className="botao-secundario px-3" type="button">
@@ -432,141 +515,74 @@ export function PaginaMercado() {
         </div>
       </div>
 
-      {alertaDespensa && (
-        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex items-start gap-3 animar-entrada">
-          <Package className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" size={20} />
-          <div>
-            <p className="font-semibold text-amber-800 dark:text-amber-200 text-sm mb-1">Alerta da Despensa</p>
-            <p className="text-amber-700 dark:text-amber-300 text-sm">{alertaDespensa}</p>
-          </div>
-          <button onClick={() => setAlertaDespensa(null)} className="text-amber-400 hover:text-amber-600 ml-auto">
-            ×
-          </button>
-        </div>
-      )}
-
+      {/* Botões de Ação */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <button onClick={abrirModalNovo} className="botao-primario">
-            <Plus size={18} />
-            Adicionar item
-          </button>
-          <BotaoImportar onImportar={importarItens} />
-          <button onClick={gerarPdf} className="botao-secundario">
-            <FileText size={18} />
-            Exportar PDF
+        <div className="flex items-center gap-2">
+          <button onClick={() => setModalAberto(true)} className="botao-primario">
+            <Plus size={18} /> Adicionar item
           </button>
         </div>
 
-        {/* --- CONTADOR DE PRODUTOS --- */}
-        <div className="text-sm font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-xl">
-          Total de itens: <span className="text-teal-600 dark:text-teal-400 font-bold">{totalProdutos}</span> ({totalUnidades} un/kg)
-        </div>
+        {/* Botão Principal: Finalizar Compra */}
+        <button
+          onClick={finalizarCompra}
+          disabled={salvandoCompra || itensModo.length === 0}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-all flex items-center gap-2 disabled:opacity-50"
+        >
+          <CheckCircle size={18} />
+          {salvandoCompra ? 'Salvando...' : 'Finalizar e Guardar Compra'}
+        </button>
       </div>
 
+      {/* Busca */}
+      <div className="relative">
+        <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          type="text"
+          placeholder="Buscar no carrinho..."
+          value={buscaInput}
+          onChange={(e) => setBuscaInput(e.target.value)}
+          className="campo-entrada pl-10"
+        />
+      </div>
+
+      {/* Lista do Carrinho Atual com edição de quantidade, peso e preço */}
       <div className="space-y-3">
-        {itensModo.length === 0 ? (
+        {itensExibidos.length === 0 ? (
           <div className="cartao text-center py-12 text-slate-400">
-            <ShoppingCart size={40} className="mx-auto mb-3 opacity-40" />
-            <p>Carrinho vazio. Adicione itens para começar.</p>
+            <p>Nenhum produto encontrado no carrinho.</p>
           </div>
         ) : (
-          itensModo.map((item) => {
-            const itemDespensa = despensa.find(
-              (d) => d.nome.toLowerCase() === item.nome.toLowerCase()
-            );
-            const maisCaro = itemDespensa && item.precoUnitario > itemDespensa.ultimoPreco;
-            const maisBarato = itemDespensa && item.precoUnitario < itemDespensa.ultimoPreco;
-
-            return (
-              <div key={item.id} className="cartao flex items-center gap-3 animar-entrada">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-semibold text-slate-900 dark:text-slate-100 truncate">{item.nome}</h3>
-                    {maisCaro && (
-                      <span className="badge bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">
-                        <TrendingUp size={12} /> Mais caro
-                      </span>
-                    )}
-                    {maisBarato && (
-                      <span className="badge bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300">
-                        <TrendingDown size={12} /> Mais barato
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                    {item.quantidade} {item.unidade} × {formatarMoeda(item.precoUnitario)} = {' '}
-                    <span className="font-semibold text-slate-700 dark:text-slate-200">{formatarMoeda(item.subtotal)}</span>
-                  </p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                    Por {item.adicionadoPor} • {formatarData(item.adicionadoEm)}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  {/* --- BOTÃO EDITAR ITEM --- */}
-                  <button
-                    onClick={() => abrirModalEditar(item)}
-                    className="p-2 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/30 transition-colors"
-                    aria-label="Editar item"
-                    title="Editar nome ou valor"
-                    type="button"
-                  >
-                    <Pencil size={18} />
-                  </button>
-
-                  {/* --- BOTÃO REMOVER ITEM --- */}
-                  <button
-                    onClick={() => removerItem(item.id)}
-                    className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-                    aria-label="Remover item"
-                    type="button"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-              </div>
-            );
-          })
+          itensExibidos.map((item) => (
+            <ItemBuscaEditavel key={item.id} item={item} />
+          ))
         )}
       </div>
 
-      {itensModo.length > 0 && (
-        <div className="cartao-destaque flex items-center justify-between">
-          <div>
-            <span className="font-bold text-slate-800 dark:text-slate-100 block">Total {modo === 'rancho' ? 'do Rancho' : 'dos Gastos Extras'}</span>
-            <span className="text-xs text-slate-500">{totalProdutos} produtos cadastrados</span>
-          </div>
-          <span className="text-2xl font-bold text-teal-700 dark:text-teal-400">{formatarMoeda(totalGasto)}</span>
-        </div>
-      )}
-
-      {/* --- MODAL DE NOVO / EDITA ITEM --- */}
-      <Modal
-        aberto={modalAberto}
-        onFechar={() => setModalAberto(false)}
-        titulo={itemEmEdicao ? 'Editar item' : 'Adicionar item ao carrinho'}
-      >
-        <form onSubmit={salvarItem} className="space-y-4">
+      {/* Modal Adicionar */}
+      <Modal aberto={modalAberto} onFechar={() => setModalAberto(false)} titulo="Adicionar item">
+        <form onSubmit={adicionarItem} className="space-y-4">
           <div>
             <label className="rotulo">Nome do produto</label>
             <input
               type="text"
-              placeholder="Ex: Arroz 5kg"
+              list="sugestoes-despensa"
               value={novoNome}
               onChange={(e) => setNovoNome(e.target.value)}
               className="campo-entrada"
-              autoFocus
               required
             />
+            <datalist id="sugestoes-despensa">
+              {despensa.map((d) => (
+                <option key={d.id} value={d.nome} />
+              ))}
+            </datalist>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="rotulo">Quantidade</label>
               <input
                 type="text"
-                inputMode="decimal"
-                placeholder="Ex: 2 ou 0.450"
                 value={novaQtd}
                 onChange={(e) => setNovaQtd(e.target.value)}
                 className="campo-entrada"
@@ -587,36 +603,17 @@ export function PaginaMercado() {
             </div>
           </div>
           <div>
-            <label className="rotulo">
-              {novaUnidade === 'un' ? 'Preço unitário (R$)' : 'Preço por kg (R$)'}
-            </label>
+            <label className="rotulo">Preço Unitário / R$</label>
             <input
               type="text"
-              inputMode="decimal"
-              placeholder="Ex: 49.90"
               value={novoPreco}
               onChange={(e) => setNovoPreco(e.target.value)}
               className="campo-entrada"
               required
             />
           </div>
-          {novoPreco && novaQtd && (
-            <div className="bg-teal-50 dark:bg-slate-800/80 rounded-xl p-3 text-sm border border-teal-100 dark:border-slate-700">
-              <span className="text-slate-600 dark:text-slate-400">Subtotal: </span>
-              <span className="font-bold text-teal-700 dark:text-teal-300">
-                {formatarMoeda(
-                  calcularSubtotal(
-                    parseFloat(novaQtd.replace(',', '.')) || 0,
-                    novaUnidade,
-                    parseFloat(novoPreco.replace(',', '.')) || 0
-                  )
-                )}
-              </span>
-            </div>
-          )}
           <button type="submit" className="botao-primario w-full">
-            {itemEmEdicao ? <Check size={18} /> : <Plus size={18} />}
-            {itemEmEdicao ? 'Salvar alterações' : 'Adicionar ao carrinho'}
+            Adicionar
           </button>
         </form>
       </Modal>
