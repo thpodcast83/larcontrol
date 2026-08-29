@@ -35,7 +35,6 @@ import {
   Edit2,
   Save,
   Tag,
-  Layers,
 } from 'lucide-react';
 
 function ItemBuscaEditavel({ item }: { item: ItemCarrinho }) {
@@ -57,7 +56,7 @@ function ItemBuscaEditavel({ item }: { item: ItemCarrinho }) {
       return;
     }
 
-    await updateDoc(doc(banco, 'mercado', item.id), {
+    await updateDoc(doc(banco, 'carrinho_atual', item.id), {
       quantidade: qNum,
       unidade: unidadeEditada,
       precoUnitario: pNum,
@@ -66,7 +65,7 @@ function ItemBuscaEditavel({ item }: { item: ItemCarrinho }) {
   };
 
   const removerItem = async () => {
-    await deleteDoc(doc(banco, 'mercado', item.id));
+    await deleteDoc(doc(banco, 'carrinho_atual', item.id));
   };
 
   return (
@@ -173,8 +172,9 @@ export function PaginaMercado() {
     return () => clearTimeout(timer);
   }, [buscaInput]);
 
+  // Escuta apenas a coleção do Carrinho Atual (separada dos 5 mil itens do banco geral)
   useEffect(() => {
-    const q = query(collection(banco, 'mercado'), orderBy('adicionadoEm', 'desc'));
+    const q = query(collection(banco, 'carrinho_atual'), orderBy('adicionadoEm', 'desc'));
     const cancelar = onSnapshot(q, (snapshot) => {
       const lista: ItemCarrinho[] = [];
       snapshot.forEach((docSnap) => {
@@ -222,14 +222,13 @@ export function PaginaMercado() {
 
   const itensModo = useMemo(() => itens.filter((i) => i.modo === modo), [itens, modo]);
 
-  const { totalBruto, totalQuantidade } = useMemo(() => {
+  const { totalBruto } = useMemo(() => {
     return itensModo.reduce(
       (acc, i) => {
         acc.totalBruto += i.subtotal;
-        acc.totalQuantidade += i.quantidade;
         return acc;
       },
-      { totalBruto: 0, totalQuantidade: 0 }
+      { totalBruto: 0 }
     );
   }, [itensModo]);
 
@@ -254,13 +253,27 @@ export function PaginaMercado() {
     return itensFiltrados.slice(0, limiteExibicao);
   }, [itensFiltrados, limiteExibicao]);
 
+  const apagarItensEmLotes = async (listaItens: ItemCarrinho[]) => {
+    const tamanhoLote = 400;
+    for (let i = 0; i < listaItens.length; i += tamanhoLote) {
+      const pedaco = listaItens.slice(i, i + tamanhoLote);
+      const lote = writeBatch(banco);
+      pedaco.forEach((item) => {
+        lote.delete(doc(banco, 'carrinho_atual', item.id));
+      });
+      await lote.commit();
+    }
+  };
+
   const limparCarrinhoInteiro = async () => {
     if (!confirm('Deseja realmente remover todos os itens deste modo do carrinho?')) return;
-    const lote = writeBatch(banco);
-    itensModo.forEach((item) => {
-      lote.delete(doc(banco, 'mercado', item.id));
-    });
-    await lote.commit();
+    try {
+      await apagarItensEmLotes(itensModo);
+      alert('Carrinho limpo com sucesso!');
+    } catch (erro) {
+      console.error('Erro ao limpar carrinho:', erro);
+      alert('Erro ao limpar carrinho.');
+    }
   };
 
   const salvarTeto = () => {
@@ -294,7 +307,8 @@ export function PaginaMercado() {
     setNovaQtd('1');
     setNovoPreco('');
 
-    await addDoc(collection(banco, 'mercado'), {
+    // Adiciona o item apenas no carrinho atual da compra
+    await addDoc(collection(banco, 'carrinho_atual'), {
       nome: nomeItem,
       quantidade: qtd,
       unidade: novaUnidade,
@@ -334,11 +348,7 @@ export function PaginaMercado() {
         })),
       });
 
-      const lote = writeBatch(banco);
-      itensModo.forEach((item) => {
-        lote.delete(doc(banco, 'mercado', item.id));
-      });
-      await lote.commit();
+      await apagarItensEmLotes(itensModo);
 
       alert('Compra finalizada e salva no Histórico com sucesso!');
       setMercado('');
@@ -360,7 +370,7 @@ export function PaginaMercado() {
           Mercado / Carrinho
         </h1>
         <p className="text-slate-500 text-sm mt-1">
-          Gerencie os produtos adicionados, ajuste valores e finalize sua compra.
+          Gerencie os produtos adicionados ao carrinho atual, ajuste valores e finalize sua compra.
         </p>
       </div>
 
@@ -375,7 +385,7 @@ export function PaginaMercado() {
         </div>
         <div className="flex items-center gap-2">
           <span className="badge bg-teal-700/60 text-teal-100 text-xs px-3 py-1 rounded-full font-medium">
-            {itensModo.length} itens cadastrados
+            {itensModo.length} itens no carrinho
           </span>
           {itensModo.length > 0 && (
             <button
@@ -516,7 +526,7 @@ export function PaginaMercado() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <button onClick={() => setModalAberto(true)} className="botao-primario">
-          <Plus size={18} /> Adicionar item
+          <Plus size={18} /> Adicionar item ao carrinho
         </button>
 
         <button
@@ -540,11 +550,10 @@ export function PaginaMercado() {
         />
       </div>
 
-      {/* Lista com Paginação / Limite para evitar travamentos */}
       <div className="space-y-3">
         {itensExibidos.length === 0 ? (
           <div className="cartao text-center py-12 text-slate-400">
-            <p>Nenhum produto encontrado no carrinho.</p>
+            <p>Nenhum produto no carrinho no momento.</p>
           </div>
         ) : (
           <>
@@ -566,7 +575,7 @@ export function PaginaMercado() {
         )}
       </div>
 
-      <Modal aberto={modalAberto} onFechar={() => setModalAberto(false)} titulo="Adicionar item">
+      <Modal aberto={modalAberto} onFechar={() => setModalAberto(false)} titulo="Adicionar item ao carrinho">
         <form onSubmit={adicionarItem} className="space-y-4">
           <div>
             <label className="rotulo">Nome do produto</label>
