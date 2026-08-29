@@ -39,6 +39,16 @@ interface CompraHistorico {
   produtos: ProdutoHistorico[];
 }
 
+interface ComparativoProduto {
+  produto: string;
+  precoAtual: number;
+  precoAnterior: number;
+  diferenca: number;
+  status: 'mais_barato' | 'mais_caro';
+  dataAtual: string;
+  dataAnterior: string;
+}
+
 export function PaginaHistorico() {
   const [compras, setCompras] = useState<CompraHistorico[]>([]);
   const [compraExpandida, setCompraExpandida] = useState<string | null>(null);
@@ -49,24 +59,30 @@ export function PaginaHistorico() {
       orderBy('dataCompra', 'desc')
     );
 
-    const cancelar = onSnapshot(q, (snapshot) => {
-      const lista: CompraHistorico[] = [];
-      snapshot.forEach((docSnap) => {
-        const dados = docSnap.data();
-        lista.push({
-          id: docSnap.id,
-          dataCompra: dados.dataCompra || '',
-          mercado: dados.mercado || '',
-          localizacao: dados.localizacao || '',
-          tetoGasto: dados.tetoGasto || 0,
-          totalGasto: dados.totalGasto || 0,
-          modo: dados.modo || 'rancho',
-          compradoPor: dados.compradoPor || 'Usuário',
-          produtos: dados.produtos || [],
+    const cancelar = onSnapshot(
+      q,
+      (snapshot) => {
+        const lista: CompraHistorico[] = [];
+        snapshot.forEach((docSnap) => {
+          const dados = docSnap.data();
+          lista.push({
+            id: docSnap.id,
+            dataCompra: dados.dataCompra || '',
+            mercado: dados.mercado || '',
+            localizacao: dados.localizacao || '',
+            tetoGasto: dados.tetoGasto || 0,
+            totalGasto: dados.totalGasto || 0,
+            modo: dados.modo || 'rancho',
+            compradoPor: dados.compradoPor || 'Usuário',
+            produtos: Array.isArray(dados.produtos) ? dados.produtos : [],
+          });
         });
-      });
-      setCompras(lista);
-    });
+        setCompras(lista);
+      },
+      (erro) => {
+        console.error('Erro ao buscar histórico de compras:', erro);
+      }
+    );
 
     return () => cancelar();
   }, []);
@@ -75,27 +91,23 @@ export function PaginaHistorico() {
   const comparativos = useMemo(() => {
     if (compras.length < 2) return [];
 
-    const analises: {
-      produto: string;
-      precoAtual: number;
-      precoAnterior: number;
-      diferenca: number;
-      status: 'mais_barato' | 'mais_caro';
-      dataAtual: string;
-      dataAnterior: string;
-    }[] = [];
-
+    const analises: ComparativoProduto[] = [];
     const ultimaCompra = compras[0];
     const comprasAnteriores = compras.slice(1);
 
+    if (!ultimaCompra?.produtos || ultimaCompra.produtos.length === 0) return [];
+
     ultimaCompra.produtos.forEach((prodAtual) => {
+      const nomeNormalizadoAtual = prodAtual.nome.trim().toLowerCase();
+
       for (const compraAnt of comprasAnteriores) {
-        const prodAnterior = compraAnt.produtos.find(
-          (p) => p.nome.toLowerCase() === prodAtual.nome.toLowerCase()
+        const prodAnterior = compraAnt.produtos?.find(
+          (p) => p.nome.trim().toLowerCase() === nomeNormalizadoAtual
         );
 
         if (prodAnterior && prodAnterior.precoUnitario > 0) {
           const diff = prodAtual.precoUnitario - prodAnterior.precoUnitario;
+          
           if (diff !== 0) {
             analises.push({
               produto: prodAtual.nome,
@@ -107,7 +119,7 @@ export function PaginaHistorico() {
               dataAnterior: compraAnt.dataCompra,
             });
           }
-          break; // Compara sempre com o registro imediatamente mais recente
+          break; // Compara com o registro imediatamente anterior encontrado
         }
       }
     });
@@ -190,14 +202,14 @@ export function PaginaHistorico() {
           compras.map((compra) => {
             const aberta = compraExpandida === compra.id;
             return (
-              <div key={compra.id} className="cartao overflow-hidden transition-all">
+              <div key={compra.id} className="cartao overflow-hidden transition-all p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
                 <div
                   onClick={() => setCompraExpandida(aberta ? null : compra.id)}
                   className="cursor-pointer flex items-center justify-between"
                 >
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="badge bg-teal-100 text-teal-800 font-bold">
+                      <span className="px-2 py-0.5 text-xs rounded-full bg-teal-100 text-teal-800 font-bold dark:bg-teal-950 dark:text-teal-300">
                         {compra.modo.toUpperCase()}
                       </span>
                       <h3 className="font-bold text-slate-900 dark:text-slate-100">
@@ -208,9 +220,11 @@ export function PaginaHistorico() {
                       <span className="flex items-center gap-1">
                         <Calendar size={12} /> {compra.dataCompra}
                       </span>
-                      <span className="flex items-center gap-1">
-                        <MapPin size={12} /> {compra.localizacao}
-                      </span>
+                      {compra.localizacao && (
+                        <span className="flex items-center gap-1">
+                          <MapPin size={12} /> {compra.localizacao}
+                        </span>
+                      )}
                     </p>
                   </div>
 
@@ -225,7 +239,7 @@ export function PaginaHistorico() {
                         </p>
                       )}
                     </div>
-                    {aberta ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                    {aberta ? <ChevronUp size={20} className="text-slate-500" /> : <ChevronDown size={20} className="text-slate-500" />}
                   </div>
                 </div>
 
