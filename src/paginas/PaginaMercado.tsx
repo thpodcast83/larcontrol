@@ -48,7 +48,7 @@ import {
 
 /**
  * Componente auxiliar para editar diretamente o item encontrado na busca
- * definindo quantidade, unidade (un, kg, g) e preço antes de atualizar.
+ * definindo quantidade, unidade (un, kg, g) e preço antes de adicionar ao carrinho.
  */
 function ItemBuscaEditavel({ item }: { item: ItemCarrinho }) {
   const [qtdEditada, setQtdEditada] = useState(item.quantidade ? item.quantidade.toString() : '1');
@@ -145,7 +145,7 @@ function ItemBuscaEditavel({ item }: { item: ItemCarrinho }) {
             className="botao-primario text-xs w-full py-2"
             type="button"
           >
-            Atualizar Carrinho
+            Adicionar no Carrinho
           </button>
         </div>
       </div>
@@ -268,10 +268,16 @@ export function PaginaMercado() {
   const saldo = teto - totalGasto;
   const percentual = teto > 0 ? Math.min((totalGasto / teto) * 100, 100) : 0;
 
+  // Busca atualizada para filtrar por nome, preço unitário ou subtotal
   const itensFiltrados = useMemo(() => {
     const termo = buscaDebounced.toLowerCase().trim();
     if (!termo) return itensModo;
-    return itensModo.filter((item) => item.nome.toLowerCase().includes(termo));
+    return itensModo.filter((item) => {
+      const nomeMatch = item.nome.toLowerCase().includes(termo);
+      const precoMatch = item.precoUnitario?.toString().includes(termo);
+      const subtotalMatch = item.subtotal?.toString().includes(termo);
+      return nomeMatch || precoMatch || subtotalMatch;
+    });
   }, [itensModo, buscaDebounced]);
 
   const itensExibidos = useMemo(() => {
@@ -565,7 +571,7 @@ export function PaginaMercado() {
         <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
         <input
           type="text"
-          placeholder="Buscar no carrinho..."
+          placeholder="Buscar no carrinho por nome ou preço..."
           value={buscaInput}
           onChange={(e) => setBuscaInput(e.target.value)}
           className="campo-entrada pl-10"
