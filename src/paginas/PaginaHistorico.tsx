@@ -5,7 +5,7 @@
  * -----------------------------------------------------------------------------
  */
 import React, { useEffect, useState, useMemo } from 'react';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { banco } from '@/firebase';
 import { formatarMoeda } from '@/utils/utilFormato';
 import {
@@ -56,7 +56,8 @@ export function PaginaHistorico() {
   useEffect(() => {
     const q = query(
       collection(banco, 'historico_compras'),
-      orderBy('dataCompra', 'desc')
+      orderBy('dataCompra', 'desc'),
+      limit(50)
     );
 
     const cancelar = onSnapshot(
