@@ -43,6 +43,7 @@ import {
   Calendar,
   Edit2,
   Save,
+  Tag,
 } from 'lucide-react';
 
 /**
@@ -165,12 +166,13 @@ export function PaginaMercado() {
   const [editandoTeto, setEditandoTeto] = useState(false);
   const [tetoInput, setTetoInput] = useState('');
 
-  // Dados da Compra
+  // Dados da Compra e Desconto Global
   const [dataCompra, setDataCompra] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
   const [mercado, setMercado] = useState('');
   const [localizacao, setLocalizacao] = useState('');
+  const [descontoGlobal, setDescontoGlobal] = useState('');
   const [modalAberto, setModalAberto] = useState(false);
   const [alertaDespensa, setAlertaDespensa] = useState<string | null>(null);
   const [salvandoCompra, setSalvandoCompra] = useState(false);
@@ -249,16 +251,19 @@ export function PaginaMercado() {
 
   const itensModo = useMemo(() => itens.filter((i) => i.modo === modo), [itens, modo]);
 
-  const { totalGasto, totalQuantidade } = useMemo(() => {
+  const { totalBruto, totalQuantidade } = useMemo(() => {
     return itensModo.reduce(
       (acc, i) => {
-        acc.totalGasto += i.subtotal;
+        acc.totalBruto += i.subtotal;
         acc.totalQuantidade += i.quantidade;
         return acc;
       },
-      { totalGasto: 0, totalQuantidade: 0 }
+      { totalBruto: 0, totalQuantidade: 0 }
     );
   }, [itensModo]);
+
+  const dGlobalNum = parseFloat(descontoGlobal.replace(',', '.')) || 0;
+  const totalGasto = Math.max(0, totalBruto - dGlobalNum);
 
   const saldo = teto - totalGasto;
   const percentual = teto > 0 ? Math.min((totalGasto / teto) * 100, 100) : 0;
@@ -339,6 +344,8 @@ export function PaginaMercado() {
         mercado: mercado.trim() || 'Mercado não informado',
         localizacao: localizacao.trim() || 'Localização não informada',
         tetoGasto: teto,
+        totalBruto,
+        descontoGlobal: dGlobalNum,
         totalGasto,
         modo,
         totalItens: itensModo.length,
@@ -363,6 +370,7 @@ export function PaginaMercado() {
       alert('Compra finalizada e salva no Histórico com sucesso!');
       setMercado('');
       setLocalizacao('');
+      setDescontoGlobal('');
     } catch (erro) {
       console.error('Erro ao finalizar compra:', erro);
       alert('Erro ao finalizar compra. Tente novamente.');
@@ -383,15 +391,20 @@ export function PaginaMercado() {
         </p>
       </div>
 
-      {/* Card de Total Acumulado */}
+      {/* Card de Total Acumulado com Desconto Global aplicado */}
       <div className="cartao-destaque bg-gradient-to-r from-teal-800 to-teal-950 text-white flex items-center justify-between p-5 rounded-2xl shadow-lg">
         <div>
           <span className="text-teal-200 text-xs font-semibold uppercase tracking-wider">
-            Total {modo === 'rancho' ? 'do Rancho' : 'dos Gastos Extras'}
+            Total Líquido {modo === 'rancho' ? 'do Rancho' : 'dos Gastos Extras'}
           </span>
           <h2 className="text-3xl font-extrabold text-white mt-0.5">
             {formatarMoeda(totalGasto)}
           </h2>
+          {dGlobalNum > 0 && (
+            <p className="text-xs text-teal-200 mt-1">
+              Bruto: {formatarMoeda(totalBruto)} | Desconto Global: -{formatarMoeda(dGlobalNum)}
+            </p>
+          )}
         </div>
         <div className="text-right">
           <span className="badge bg-teal-700/60 text-teal-100 text-xs px-3 py-1 rounded-full font-medium">
@@ -475,8 +488,8 @@ export function PaginaMercado() {
         )}
       </div>
 
-      {/* Informações da Compra: Data, Mercado e Localização */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {/* Informações da Compra: Data, Mercado, Geolocalização e Desconto Global */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div>
           <label className="rotulo flex items-center gap-1">
             <Calendar size={14} /> Data da Compra
@@ -492,9 +505,22 @@ export function PaginaMercado() {
           <label className="rotulo">Nome do Mercado</label>
           <input
             type="text"
-            placeholder="Ex: Carrefour"
+            placeholder="Ex: Max Center"
             value={mercado}
             onChange={(e) => setMercado(e.target.value)}
+            className="campo-entrada"
+          />
+        </div>
+        <div>
+          <label className="rotulo flex items-center gap-1">
+            <Tag size={14} /> Desconto Global (R$)
+          </label>
+          <input
+            type="text"
+            inputMode="decimal"
+            placeholder="Ex: 14,42"
+            value={descontoGlobal}
+            onChange={(e) => setDescontoGlobal(e.target.value)}
             className="campo-entrada"
           />
         </div>
