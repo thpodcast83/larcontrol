@@ -190,7 +190,7 @@ export function PaginaMercado() {
   useEffect(() => {
     async function carregarCatalogo() {
       try {
-        const snapshot = await getDocs(collection(banco, 'despensa')); // ou 'mercado' conforme sua base
+        const snapshot = await getDocs(collection(banco, 'despensa'));
         const lista: any[] = [];
         snapshot.forEach((docSnap) => {
           const d = docSnap.data();
@@ -206,13 +206,13 @@ export function PaginaMercado() {
     carregarCatalogo();
   }, []);
 
-  // Filtro local instantâneo na memória (sem novas requisições ao Firestore)
+  // Filtro local instantâneo na memória
   const resultadosBusca = useMemo(() => {
     const termo = termoBusca.trim().toLowerCase();
     if (!termo) return [];
     return catalogoGeral
       .filter((item) => (item.nome || '').toLowerCase().includes(termo))
-      .slice(0, 15); // Limita a 15 resultados visuais para manter a interface limpa
+      .slice(0, 15);
   }, [catalogoGeral, termoBusca]);
 
   const itensModo = useMemo(() => itensCarrinho.filter((i) => i.modo === modo), [itensCarrinho, modo]);
@@ -225,6 +225,13 @@ export function PaginaMercado() {
   const totalGasto = Math.max(0, totalBruto - dGlobalNum);
   const saldo = teto - totalGasto;
   const percentual = teto > 0 ? Math.min((totalGasto / teto) * 100, 100) : 0;
+
+  const buscarGPS = async () => {
+    const endereco = await obterGeolocalizacao();
+    if (endereco) {
+      setLocalizacao(endereco);
+    }
+  };
 
   const adicionarAoCarrinhoDoBanco = async (prod: any) => {
     const qtd = prod.quantidade || 1;
@@ -329,32 +336,163 @@ export function PaginaMercado() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
           <ShoppingCart className="text-teal-600" />
           Mercado / Carrinho
         </h1>
         <p className="text-slate-500 text-sm mt-1">
-          Busque produtos do banco de dados para adicionar ao seu carrinho e controlar sua compra.
+          Gerencie sua compra em tempo real, controle o orçamento e adicione itens com facilidade.
         </p>
       </div>
 
-      <div className="cartao-destaque bg-gradient-to-r from-teal-800 to-teal-950 text-white flex items-center justify-between p-5 rounded-2xl shadow-lg">
+      {/* --- PAINEL DE CONTROLE DA COMPRA (TETO, MERCADO, LOCAL, DATA) --- */}
+      <div className="cartao p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label className="text-xs font-semibold text-slate-500 mb-1 block flex items-center gap-1">
+              <Calendar size={14} /> Data da Compra
+            </label>
+            <input
+              type="date"
+              value={dataCompra}
+              onChange={(e) => setDataCompra(e.target.value)}
+              className="campo-entrada text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-500 mb-1 block flex items-center gap-1">
+              <Tag size={14} /> Nome do Mercado
+            </label>
+            <input
+              type="text"
+              placeholder="Ex: Supermercado X"
+              value={mercado}
+              onChange={(e) => setMercado(e.target.value)}
+              className="campo-entrada text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-500 mb-1 block flex items-center gap-1">
+              <MapPin size={14} /> Localização
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Ex: Centro"
+                value={localizacao}
+                onChange={(e) => setLocalizacao(e.target.value)}
+                className="campo-entrada text-sm"
+              />
+              <button
+                onClick={buscarGPS}
+                type="button"
+                className="bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-slate-700 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 transition-all"
+                title="Obter localização atual"
+              >
+                <MapPin size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Teto e Desconto Global */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-semibold text-slate-500 flex items-center gap-1">
+                <Wallet size={14} /> Teto de Gasto (R$)
+              </label>
+              {!editandoTeto ? (
+                <button
+                  onClick={() => {
+                    setTetoInput(teto ? teto.toString() : '');
+                    setEditandoTeto(true);
+                  }}
+                  className="text-teal-600 text-xs font-bold hover:underline flex items-center gap-1"
+                >
+                  <Edit2 size={12} /> {teto > 0 ? 'Editar Teto' : 'Definir Teto'}
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setTeto(parseFloat(tetoInput.replace(',', '.')) || 0);
+                    setEditandoTeto(false);
+                  }}
+                  className="text-emerald-600 text-xs font-bold hover:underline flex items-center gap-1"
+                >
+                  <Save size={12} /> Salvar Teto
+                </button>
+              )}
+            </div>
+
+            {editandoTeto ? (
+              <input
+                type="text"
+                inputMode="decimal"
+                value={tetoInput}
+                onChange={(e) => setTetoInput(e.target.value)}
+                placeholder="0.00"
+                className="campo-entrada text-sm"
+              />
+            ) : (
+              <p className="text-sm font-bold text-slate-800 dark:text-slate-200 py-2">
+                {teto > 0 ? formatarMoeda(teto) : 'Nenhum teto definido'}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-500 mb-1 block">
+              Desconto Global no Caixa (R$)
+            </label>
+            <input
+              type="text"
+              inputMode="decimal"
+              placeholder="Ex: 10,00"
+              value={descontoGlobal}
+              onChange={(e) => setDescontoGlobal(e.target.value)}
+              className="campo-entrada text-sm"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* --- CARD DE RESUMO FINANCEIRO --- */}
+      <div className="cartao-destaque bg-gradient-to-r from-teal-800 to-teal-950 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between p-5 rounded-2xl shadow-lg gap-4">
         <div>
           <span className="text-teal-200 text-xs font-semibold uppercase tracking-wider">
-            Total no Carrinho ({modo === 'rancho' ? 'Rancho' : 'Extras'})
+            Total no Carrinho ({modo === 'rancho' ? 'Rancho' : 'Gastos Extras'})
           </span>
           <h2 className="text-3xl font-extrabold text-white mt-0.5">
             {formatarMoeda(totalGasto)}
           </h2>
+          {dGlobalNum > 0 && (
+            <p className="text-xs text-teal-300 mt-1">
+              Bruto: {formatarMoeda(totalBruto)} | Desconto: -{formatarMoeda(dGlobalNum)}
+            </p>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="badge bg-teal-700/60 text-teal-100 text-xs px-3 py-1 rounded-full font-medium">
+
+        <div className="flex flex-wrap items-center gap-3">
+          {teto > 0 && (
+            <div className="text-right bg-teal-900/60 px-4 py-2 rounded-xl border border-teal-700/50">
+              <span className="text-xs text-teal-300 block">Saldo Restante</span>
+              <span className={`text-sm font-bold ${saldo >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                {formatarMoeda(saldo)}
+              </span>
+            </div>
+          )}
+
+          <span className="badge bg-teal-700/60 text-teal-100 text-xs px-3 py-2 rounded-xl font-medium">
             {itensModo.length} itens
           </span>
+
           {itensModo.length > 0 && (
             <button
               onClick={limparCarrinho}
-              className="bg-red-600/80 hover:bg-red-600 text-white p-2 rounded-xl text-xs transition-all"
+              className="bg-red-600/80 hover:bg-red-600 text-white p-2.5 rounded-xl text-xs transition-all"
               title="Limpar carrinho"
             >
               <Trash2 size={16} />
@@ -363,6 +501,7 @@ export function PaginaMercado() {
         </div>
       </div>
 
+      {/* Seletor de Modo (Rancho vs Extras) */}
       <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
         <button
           onClick={() => setModo('rancho')}
@@ -382,6 +521,7 @@ export function PaginaMercado() {
         </button>
       </div>
 
+      {/* --- BARRA DE BUSCA RÁPIDA NO BANCO --- */}
       <div className="relative">
         <label className="text-xs font-semibold text-slate-500 mb-1 block">
           Buscar no banco de dados para colocar no carrinho:
@@ -425,6 +565,7 @@ export function PaginaMercado() {
         )}
       </div>
 
+      {/* Botões de Ação Principal */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <button onClick={() => setModalAberto(true)} className="botao-primario">
           <Plus size={18} /> Adicionar Item Manual
@@ -440,6 +581,7 @@ export function PaginaMercado() {
         </button>
       </div>
 
+      {/* --- LISTA DE ITENS NO CARRINHO --- */}
       <div className="space-y-3">
         <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300">
           Itens no Carrinho ({itensModo.length})
@@ -454,6 +596,7 @@ export function PaginaMercado() {
         )}
       </div>
 
+      {/* Modal para Adicionar Item Manual */}
       <Modal aberto={modalAberto} onFechar={() => setModalAberto(false)} titulo="Adicionar Item Manual">
         <form onSubmit={adicionarManual} className="space-y-4">
           <div>
