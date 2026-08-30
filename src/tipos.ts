@@ -91,6 +91,7 @@ export interface Conta {
   diaFechamento?: string;
   diaVencimento?: string;
   taxaJurosMes?: number;
+  responsavel?: string; // <-- Adicionado para identificar o dono da dívida
 }
 
 /**
