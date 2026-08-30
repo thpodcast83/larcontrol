@@ -151,7 +151,7 @@ export function PaginaFinancas() {
 
   // Análise de Faturas por Cartão / Shopee / Empréstimos com cálculo de juros por atraso
   const relatorioCartoes = useMemo(() => {
-    const mapa: Record<string, { totalFatura:esteTotal, parcelamentos:any[], vencimento:string, fechamento:string, jurosEstimado:number }> = {};
+    const mapa: Record<string, { totalFatura: number, parcelamentos: any[], vencimento: string, fechamento: string, jurosEstimado: number }> = {};
     const hoje = new Date();
 
     contas.forEach((c) => {
@@ -176,7 +176,6 @@ export function PaginaFinancas() {
 
         // Verificação de atraso e cálculo de juros compostos simples caso passe da data de vencimento
         if (c.status === 'Pendente' && c.vencimento) {
-          // Vencimento formato string "dd/mm/aaaa" ou "dd"
           const partesVenc = c.vencimento.split('/');
           if (partesVenc.length === 3) {
             const dataVencObj = new Date(parseInt(partesVenc[2]), parseInt(partesVenc[1]) - 1, parseInt(partesVenc[0]));
@@ -598,23 +597,23 @@ export function PaginaFinancas() {
       >
         <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
           <div>
-            <label className="rotulo">Descrição</label>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Descrição</label>
             <input
               type="text"
               placeholder="Ex: Compra Shopee / Fatura Nubank / Luz"
               value={descricao}
               onChange={(e) => setDescricao(e.target.value)}
-              className="campo-entrada"
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               autoFocus
             />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="rotulo">Categoria</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Categoria</label>
               <select
                 value={categoria}
                 onChange={(e) => setCategoria(e.target.value as Conta['categoria'])}
-                className="campo-entrada"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               >
                 {categoriasConta.map((cat) => (
                   <option key={cat} value={cat}>{cat}</option>
@@ -622,11 +621,11 @@ export function PaginaFinancas() {
               </select>
             </div>
             <div>
-              <label className="rotulo">Cartão / Origem</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Cartão / Origem</label>
               <select
                 value={cartaoOrigem}
                 onChange={(e) => setCartaoOrigem(e.target.value)}
-                className="campo-entrada"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               >
                 <option value="Nubank">Nubank</option>
                 <option value="Shopee">Shopee</option>
@@ -638,24 +637,24 @@ export function PaginaFinancas() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="rotulo">Valor Total (R$)</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Valor Total (R$)</label>
               <input
                 type="text"
                 inputMode="decimal"
                 placeholder="Ex: 300,00"
                 value={valor}
                 onChange={(e) => setValor(e.target.value)}
-                className="campo-entrada"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
             <div>
-              <label className="rotulo">Vencimento (dd/mm/aaaa)</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Vencimento (dd/mm/aaaa)</label>
               <input
                 type="text"
                 placeholder="Ex: 12/09/2026"
                 value={vencimento}
                 onChange={(e) => setVencimento(e.target.value)}
-                className="campo-entrada"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
           </div>
@@ -675,18 +674,18 @@ export function PaginaFinancas() {
             {ehParcelado && (
               <div className="grid grid-cols-2 gap-3 pt-1">
                 <div>
-                  <label className="rotulo text-xs">Número de Parcelas</label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Número de Parcelas</label>
                   <input
                     type="number"
                     min="1"
                     value={numeroParcelas}
                     onChange={(e) => setNumeroParcelas(e.target.value)}
-                    className="campo-entrada text-sm"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
                   />
                 </div>
                 <div>
-                  <label className="rotulo text-xs">Valor da Parcela</label>
-                  <div className="campo-entrada text-sm bg-slate-100 dark:bg-slate-900 text-slate-500 flex items-center">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Valor da Parcela</label>
+                  <div className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-200 text-sm flex items-center">
                     {formatarMoeda((converterParaNumero(valor) / (parseInt(numeroParcelas, 10) || 1)))}
                   </div>
                 </div>
@@ -697,30 +696,30 @@ export function PaginaFinancas() {
           {/* Configuração de Fechamento e Vencimento para alertas de juros */}
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="rotulo text-xs">Dia Fechamento</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Dia Fechamento</label>
               <input
                 type="text"
                 value={diaFechamento}
                 onChange={(e) => setDiaFechamento(e.target.value)}
-                className="campo-entrada text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
             <div>
-              <label className="rotulo text-xs">Dia Vencimento</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Dia Vencimento</label>
               <input
                 type="text"
                 value={diaVencimento}
                 onChange={(e) => setDiaVencimento(e.target.value)}
-                className="campo-entrada text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
             <div>
-              <label className="rotulo text-xs">Juros Rotativo (%/mês)</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Juros Rotativo (%/mês)</label>
               <input
                 type="text"
                 value={taxaJurosMes}
                 onChange={(e) => setTaxaJurosMes(e.target.value)}
-                className="campo-entrada text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
           </div>
@@ -770,48 +769,48 @@ export function PaginaFinancas() {
       >
         <div className="space-y-4">
           <div>
-            <label className="rotulo">Descrição do Empréstimo / Dívida</label>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Descrição do Empréstimo / Dívida</label>
             <input
               type="text"
               placeholder="Ex: Empréstimo Pessoal Itaú"
               value={descDivida}
               onChange={(e) => setDescDivida(e.target.value)}
-              className="campo-entrada"
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               autoFocus
             />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="rotulo">Valor (R$)</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Valor (R$)</label>
               <input
                 type="text"
                 inputMode="decimal"
                 placeholder="Ex: 5000"
                 value={valorDivida}
                 onChange={(e) => setValorDivida(e.target.value)}
-                className="campo-entrada"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
             <div>
-              <label className="rotulo">Juros (%/mês)</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Juros (%/mês)</label>
               <input
                 type="text"
                 inputMode="decimal"
                 placeholder="Ex: 3.5"
                 value={jurosDivida}
                 onChange={(e) => setJurosDivida(e.target.value)}
-                className="campo-entrada"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
             <div>
-              <label className="rotulo">Parcelas</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Parcelas</label>
               <input
                 type="text"
                 inputMode="numeric"
                 placeholder="Ex: 12"
                 value={parcelasDivida}
                 onChange={(e) => setParcelasDivida(e.target.value)}
-                className="campo-entrada"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
           </div>
