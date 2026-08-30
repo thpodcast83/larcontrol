@@ -29,8 +29,6 @@ import {
   CreditCard,
   Calculator,
   Pencil,
-  Calendar,
-  Clock,
 } from 'lucide-react';
 
 const categoriasConta = [
@@ -82,9 +80,9 @@ export function PaginaFinancas() {
   const [numeroParcelas, setNumeroParcelas] = useState('1');
   const [diaFechamento, setDiaFechamento] = useState('5');
   const [diaVencimento, setDiaVencimento] = useState('12');
-  const [taxaJurosMes, setTaxaJurosMes] = useState('15'); // Taxa padrão rotativo cartão/empréstimo ao mês (%)
+  const [taxaJurosMes, setTaxaJurosMes] = useState('15');
 
-  // Campos do simulador de dívida/empréstimo (Itau / Outros)
+  // Campos do simulador de dívida/empréstimo
   const [descDivida, setDescDivida] = useState('');
   const [valorDivida, setValorDivida] = useState('');
   const [jurosDivida, setJurosDivida] = useState('');
@@ -149,7 +147,6 @@ export function PaginaFinancas() {
 
   const totalGeral = useMemo(() => contas.reduce((acc, c) => acc + (c.valorParcela || c.valor), 0), [contas]);
 
-  // Análise de Faturas por Cartão / Shopee / Empréstimos com cálculo de juros por atraso
   const relatorioCartoes = useMemo(() => {
     const mapa: Record<string, { totalFatura: number, parcelamentos: any[], vencimento: string, fechamento: string, jurosEstimado: number }> = {};
     const hoje = new Date();
@@ -174,14 +171,13 @@ export function PaginaFinancas() {
           mapa[nomeCartao].parcelamentos.push(c);
         }
 
-        // Verificação de atraso e cálculo de juros compostos simples caso passe da data de vencimento
         if (c.status === 'Pendente' && c.vencimento) {
           const partesVenc = c.vencimento.split('/');
           if (partesVenc.length === 3) {
             const dataVencObj = new Date(parseInt(partesVenc[2]), parseInt(partesVenc[1]) - 1, parseInt(partesVenc[0]));
             if (hoje > dataVencObj) {
               const diffDias = Math.ceil((hoje.getTime() - dataVencObj.getTime()) / (1000 * 60 * 60 * 24));
-              const taxaMes = c.taxaJurosMes || 14; // ex: 14% ao mês rotativo
+              const taxaMes = c.taxaJurosMes || 14;
               const jurosDia = (taxaMes / 100) / 30;
               const valorJuros = valParcela * jurosDia * diffDias;
               mapa[nomeCartao].jurosEstimado += valorJuros;
@@ -373,11 +369,10 @@ export function PaginaFinancas() {
           Finanças e Faturas de Cartão
         </h1>
         <p className="text-slate-500 text-sm mt-1">
-          Gestão inteligente de cartões (Nubank, Shopee), fechamento, vencimento, parcelas e juros por atraso.
+          Gestão inteligente de cartões, fechamento, vencimento, parcelas e juros por atraso.
         </p>
       </div>
 
-      {/* === Painel de Faturas por Cartão/Serviço (Nubank, Shopee, Itau) === */}
       {Object.keys(relatorioCartoes).length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {Object.entries(relatorioCartoes).map(([nomeCartao, dados]) => (
@@ -417,7 +412,6 @@ export function PaginaFinancas() {
         </div>
       )}
 
-      {/* === Dashboard de resumo === */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="cartao">
           <div className="flex items-center gap-2 text-slate-500 text-sm mb-1">
@@ -439,7 +433,6 @@ export function PaginaFinancas() {
         </div>
       </div>
 
-      {/* === Gráfico de barras por categoria === */}
       {gastosPorCategoria.length > 0 && (
         <div className="cartao">
           <h2 className="font-bold text-slate-800 dark:text-slate-100 mb-4">Gastos por categoria</h2>
@@ -465,21 +458,6 @@ export function PaginaFinancas() {
         </div>
       )}
 
-      {/* === Alertas de orçamento === */}
-      {maiorGasto && maiorGasto.valor > totalGeral * 0.4 && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
-          <AlertCircle className="text-red-600 shrink-0 mt-0.5" size={20} />
-          <div>
-            <p className="font-semibold text-red-800 text-sm">Alerta de orçamento</p>
-            <p className="text-red-700 text-sm">
-              A categoria "{maiorGasto.categoria}" representa mais de 40% dos seus gastos.
-              Considere revisar este valor para equilibrar o orçamento.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* === Barra de ações === */}
       <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={() => {
@@ -493,7 +471,7 @@ export function PaginaFinancas() {
         </button>
         <button onClick={() => setModalDividaAberto(true)} className="botao-secundario">
           <Calculator size={18} />
-          Simulador empréstimo / Itaú
+          Simulador empréstimo
         </button>
         <button onClick={gerarPdf} className="botao-secundario">
           <FileText size={18} />
@@ -501,7 +479,6 @@ export function PaginaFinancas() {
         </button>
       </div>
 
-      {/* === Lista de contas e faturas parceladas === */}
       <div className="space-y-3">
         {contas.length === 0 ? (
           <div className="cartao text-center py-12 text-slate-400">
@@ -524,7 +501,6 @@ export function PaginaFinancas() {
                   </div>
                   <p className="text-sm text-slate-500 mt-0.5">
                     {c.categoria} • Vence: {c.vencimento} • Parcela: <strong className="text-slate-800 dark:text-slate-200">{formatarMoeda(c.valorParcela || c.valor)}</strong>
-                    {c.ehParcelado && ` (Total: ${formatarMoeda(c.valor)})`}
                   </p>
                 </div>
               </div>
@@ -558,12 +534,11 @@ export function PaginaFinancas() {
         )}
       </div>
 
-      {/* === Lista de dívidas / empréstimos === */}
       {dividas.length > 0 && (
         <div>
           <h2 className="font-bold text-slate-800 dark:text-slate-100 mb-3 flex items-center gap-2">
             <TrendingDown size={20} className="text-red-600" />
-            Empréstimos e Dívidas Cadastradas (Itaú / Outros)
+            Empréstimos e Dívidas Cadastradas
           </h2>
           <div className="space-y-3">
             {dividas.map((d) => (
@@ -572,9 +547,6 @@ export function PaginaFinancas() {
                   <h3 className="font-semibold text-slate-900 dark:text-slate-100">{d.descricao}</h3>
                   <p className="text-sm text-slate-500 mt-0.5">
                     {d.parcelas}x de {formatarMoeda(d.valorParcela)} • Juros: {d.jurosMensal}%/mês
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    Total financiado: {formatarMoeda(d.valorTotal)} • Total a pagar projetado: {formatarMoeda(d.valorParcela * d.parcelas)}
                   </p>
                 </div>
                 <button
@@ -589,7 +561,7 @@ export function PaginaFinancas() {
         </div>
       )}
 
-      {/* === Modal de conta / cartão / parcelamento === */}
+      {/* === Modal de conta / cartão / parcelamento com legendas ajustadas para alta visibilidade === */}
       <Modal
         aberto={modalContaAberto}
         onFechar={fecharModalConta}
@@ -597,7 +569,7 @@ export function PaginaFinancas() {
       >
         <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Descrição</label>
+            <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Descrição</label>
             <input
               type="text"
               placeholder="Ex: Compra Shopee / Fatura Nubank / Luz"
@@ -609,7 +581,7 @@ export function PaginaFinancas() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Categoria</label>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Categoria</label>
               <select
                 value={categoria}
                 onChange={(e) => setCategoria(e.target.value as Conta['categoria'])}
@@ -621,7 +593,7 @@ export function PaginaFinancas() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Cartão / Origem</label>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Cartão / Origem</label>
               <select
                 value={cartaoOrigem}
                 onChange={(e) => setCartaoOrigem(e.target.value)}
@@ -637,7 +609,7 @@ export function PaginaFinancas() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Valor Total (R$)</label>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Valor Total (R$)</label>
               <input
                 type="text"
                 inputMode="decimal"
@@ -648,7 +620,7 @@ export function PaginaFinancas() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Vencimento (dd/mm/aaaa)</label>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Vencimento (dd/mm/aaaa)</label>
               <input
                 type="text"
                 placeholder="Ex: 12/09/2026"
@@ -659,9 +631,8 @@ export function PaginaFinancas() {
             </div>
           </div>
 
-          {/* Seção de parcelamento */}
           <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl space-y-3 border border-slate-200 dark:border-slate-700">
-            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 cursor-pointer">
+            <label className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-slate-100 cursor-pointer">
               <input
                 type="checkbox"
                 checked={ehParcelado}
@@ -674,7 +645,7 @@ export function PaginaFinancas() {
             {ehParcelado && (
               <div className="grid grid-cols-2 gap-3 pt-1">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Número de Parcelas</label>
+                  <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Número de Parcelas</label>
                   <input
                     type="number"
                     min="1"
@@ -684,8 +655,8 @@ export function PaginaFinancas() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Valor da Parcela</label>
-                  <div className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-200 text-sm flex items-center">
+                  <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Valor da Parcela</label>
+                  <div className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm font-semibold flex items-center">
                     {formatarMoeda((converterParaNumero(valor) / (parseInt(numeroParcelas, 10) || 1)))}
                   </div>
                 </div>
@@ -693,10 +664,9 @@ export function PaginaFinancas() {
             )}
           </div>
 
-          {/* Configuração de Fechamento e Vencimento para alertas de juros */}
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Dia Fechamento</label>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Dia Fechamento</label>
               <input
                 type="text"
                 value={diaFechamento}
@@ -705,7 +675,7 @@ export function PaginaFinancas() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Dia Vencimento</label>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Dia Vencimento</label>
               <input
                 type="text"
                 value={diaVencimento}
@@ -714,7 +684,7 @@ export function PaginaFinancas() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Juros Rotativo (%/mês)</label>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Juros Rotativo (%/mês)</label>
               <input
                 type="text"
                 value={taxaJurosMes}
@@ -729,7 +699,7 @@ export function PaginaFinancas() {
               type="button"
               onClick={() => setStatusConta('Pendente')}
               className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                statusConta === 'Pendente' ? 'bg-amber-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                statusConta === 'Pendente' ? 'bg-amber-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
               }`}
             >
               Pendente
@@ -738,14 +708,14 @@ export function PaginaFinancas() {
               type="button"
               onClick={() => setStatusConta('Paga')}
               className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                statusConta === 'Paga' ? 'bg-green-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                statusConta === 'Paga' ? 'bg-green-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
               }`}
             >
               Paga
             </button>
           </div>
 
-          <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+          <label className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-slate-100 cursor-pointer">
             <input
               type="checkbox"
               checked={fixa}
@@ -761,18 +731,18 @@ export function PaginaFinancas() {
         </div>
       </Modal>
 
-      {/* === Modal de simulação de empréstimo / dívida (Itaú / Cartões) === */}
+      {/* === Modal de simulador de empréstimo === */}
       <Modal
         aberto={modalDividaAberto}
         onFechar={fecharModalDivida}
-        titulo="Simulador de Empréstimo / Fatura Parcelada (Itaú)"
+        titulo="Simulador de Empréstimo / Fatura Parcelada"
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Descrição do Empréstimo / Dívida</label>
+            <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Descrição do Empréstimo / Dívida</label>
             <input
               type="text"
-              placeholder="Ex: Empréstimo Pessoal Itaú"
+              placeholder="Ex: Empréstimo Pessoal"
               value={descDivida}
               onChange={(e) => setDescDivida(e.target.value)}
               className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
@@ -781,7 +751,7 @@ export function PaginaFinancas() {
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Valor (R$)</label>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Valor (R$)</label>
               <input
                 type="text"
                 inputMode="decimal"
@@ -792,7 +762,7 @@ export function PaginaFinancas() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Juros (%/mês)</label>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Juros (%/mês)</label>
               <input
                 type="text"
                 inputMode="decimal"
@@ -803,7 +773,7 @@ export function PaginaFinancas() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Parcelas</label>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Parcelas</label>
               <input
                 type="text"
                 inputMode="numeric"
@@ -823,10 +793,6 @@ export function PaginaFinancas() {
               <div className="flex justify-between">
                 <span className="text-slate-600 dark:text-slate-300">Total a pagar:</span>
                 <span className="font-bold text-slate-800 dark:text-slate-100">{formatarMoeda(resultadoDivida.total)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600 dark:text-slate-300">Total de juros:</span>
-                <span className="font-bold text-red-600">{formatarMoeda(resultadoDivida.jurosTotal)}</span>
               </div>
             </div>
           )}
