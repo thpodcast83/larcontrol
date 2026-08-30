@@ -77,11 +77,11 @@ export function PaginaFinancas() {
   // Campos específicos para Cartão / Parcelamento / Empréstimo
   const [cartaoOrigem, setCartaoOrigem] = useState('Nubank');
   const [tipoPagamento, setTipoPagamento] = useState<'a-vista' | 'parcelado'>('a-vista');
-  const [ehParcelado, setEhParcelado] = useState(false);
   const [numeroParcelas, setNumeroParcelas] = useState('1');
+  const [parcelaAtual, setParcelaAtual] = useState('1');
   const [diaFechamento, setDiaFechamento] = useState('5');
   const [diaVencimento, setDiaVencimento] = useState('12');
-  const [taxaJurosMes, setTaxaJurosMes] = useState('15');
+  const [taxaJurosMes, setTaxaJurosMes] = useState('14');
 
   // Campos do simulador de dívida/empréstimo
   const [descDivida, setDescDivida] = useState('');
@@ -105,6 +105,7 @@ export function PaginaFinancas() {
           cartaoOrigem: dados.cartaoOrigem || '',
           ehParcelado: dados.ehParcelado || false,
           numeroParcelas: dados.numeroParcelas || 1,
+          parcelaAtual: dados.parcelaAtual || 1,
           valorParcela: dados.valorParcela || dados.valor || 0,
           diaFechamento: dados.diaFechamento || '',
           diaVencimento: dados.diaVencimento || '',
@@ -208,6 +209,7 @@ export function PaginaFinancas() {
     const valorTotalNum = converterParaNumero(valor);
     const parceladoReal = tipoPagamento === 'parcelado';
     const numP = parceladoReal ? parseInt(numeroParcelas, 10) || 1 : 1;
+    const atualP = parceladoReal ? parseInt(parcelaAtual, 10) || 1 : 1;
     const valorParcelaCalc = numP > 0 ? valorTotalNum / numP : valorTotalNum;
 
     const dados = {
@@ -220,6 +222,7 @@ export function PaginaFinancas() {
       cartaoOrigem,
       ehParcelado: parceladoReal,
       numeroParcelas: numP,
+      parcelaAtual: atualP,
       valorParcela: valorParcelaCalc,
       diaFechamento,
       diaVencimento,
@@ -255,8 +258,8 @@ export function PaginaFinancas() {
     setFixa(conta.fixa);
     setCartaoOrigem(conta.cartaoOrigem || 'Nubank');
     setTipoPagamento(conta.ehParcelado ? 'parcelado' : 'a-vista');
-    setEhParcelado(conta.ehParcelado || false);
     setNumeroParcelas(String(conta.numeroParcelas || 1));
+    setParcelaAtual(String(conta.parcelaAtual || 1));
     setDiaFechamento(conta.diaFechamento || '5');
     setDiaVencimento(conta.diaVencimento || '12');
     setTaxaJurosMes(String(conta.taxaJurosMes || 14));
@@ -273,8 +276,8 @@ export function PaginaFinancas() {
     setFixa(false);
     setCartaoOrigem('Nubank');
     setTipoPagamento('a-vista');
-    setEhParcelado(false);
     setNumeroParcelas('1');
+    setParcelaAtual('1');
     setDiaFechamento('5');
     setDiaVencimento('12');
     setTaxaJurosMes('14');
@@ -495,7 +498,11 @@ export function PaginaFinancas() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-semibold text-slate-900 dark:text-slate-100">{c.descricao}</h3>
                     {c.cartaoOrigem && <span className="badge bg-teal-50 text-teal-700 text-xs">{c.cartaoOrigem}</span>}
-                    {c.ehParcelado && <span className="badge bg-purple-50 text-purple-700 text-xs">Parcelado ({c.numeroParcelas}x)</span>}
+                    {c.ehParcelado && (
+                      <span className="badge bg-purple-50 text-purple-700 text-xs">
+                        Parcela {c.parcelaAtual || 1}/{c.numeroParcelas}
+                      </span>
+                    )}
                     {!c.ehParcelado && <span className="badge bg-blue-50 text-blue-700 text-xs">À vista</span>}
                     {c.fixa && <span className="badge bg-slate-100 text-slate-600 text-xs">Fixa</span>}
                   </div>
@@ -613,7 +620,7 @@ export function PaginaFinancas() {
               <input
                 type="text"
                 inputMode="decimal"
-                placeholder="Ex: 300,00"
+                placeholder="Ex: 1855,00"
                 value={valor}
                 onChange={(e) => setValor(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
@@ -623,7 +630,7 @@ export function PaginaFinancas() {
               <label className="block text-xs font-bold text-white mb-1">Vencimento (dd/mm/aaaa)</label>
               <input
                 type="text"
-                placeholder="Ex: 12/09/2026"
+                placeholder="Ex: 10/09/2026"
                 value={vencimento}
                 onChange={(e) => setVencimento(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
@@ -631,7 +638,7 @@ export function PaginaFinancas() {
             </div>
           </div>
 
-          {/* Seleção de À vista ou Parcelado */}
+          {/* Seleção de À vista ou Parcelado com Parcela Atual */}
           <div className="p-3 bg-slate-800 rounded-xl space-y-3 border border-slate-700">
             <label className="block text-xs font-bold text-white">Tipo de Pagamento</label>
             <div className="flex gap-2">
@@ -660,12 +667,24 @@ export function PaginaFinancas() {
             </div>
 
             {tipoPagamento === 'parcelado' && (
-              <div className="grid grid-cols-2 gap-3 pt-2">
+              <div className="grid grid-cols-3 gap-3 pt-2">
                 <div>
-                  <label className="block text-xs font-bold text-white mb-1">Número de Parcelas</label>
+                  <label className="block text-xs font-bold text-white mb-1">Parcela Atual</label>
                   <input
                     type="number"
                     min="1"
+                    placeholder="Ex: 6"
+                    value={parcelaAtual}
+                    onChange={(e) => setParcelaAtual(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-900 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-white mb-1">Total Parcelas</label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Ex: 10"
                     value={numeroParcelas}
                     onChange={(e) => setNumeroParcelas(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-900 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
