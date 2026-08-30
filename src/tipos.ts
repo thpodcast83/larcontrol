@@ -83,6 +83,14 @@ export interface Conta {
   vencimento: string; // Data de vencimento (dd/mm/aaaa).
   status: 'Paga' | 'Pendente'; // Status do pagamento.
   fixa: boolean; // Se é uma conta fixa mensal.
+  cartaoOrigem?: string;
+  ehParcelado?: boolean;
+  numeroParcelas?: number;
+  parcelaAtual?: number; // Parcela atual em que você está (ex: 6 de 10)
+  valorParcela?: number;
+  diaFechamento?: string;
+  diaVencimento?: string;
+  taxaJurosMes?: number;
 }
 
 /**
