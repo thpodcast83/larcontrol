@@ -7,7 +7,7 @@
  *  - Login social via Google (Firebase Auth).
  *  - Logout.
  *  - Observação do estado de autenticação (onAuthStateChanged).
- *  - Exposição do usuário atual para todos os componentes do app.
+ *  - Exposição do usuário atual e responsáveis da casa para todos os componentes.
  *
  * O login Google permite que múltiplos membros de uma família compartilhem
  * o app, cada um com sua conta Google, sincronizando dados em tempo real.
@@ -24,12 +24,16 @@ import {
 import { auth, provedorGoogle } from '../firebase';
 import type { Usuario } from '../tipos';
 
+// Lista padrão de responsáveis da casa para divisão de despesas e faturas
+export const listaResponsaveisCasa = ['Thiago', 'Esposa', 'Casa / Geral'];
+
 /**
  * Interface do contexto de autenticação.
  */
 interface ContextoAuthTipo {
   usuario: Usuario | null; // Usuário atual (null se não logado).
   carregando: boolean; // True enquanto verifica a sessão inicial.
+  responsaveis: string[]; // Lista de responsáveis da casa disponíveis.
   entrarComGoogle: () => Promise<void>; // Função de login.
   sair: () => Promise<void>; // Função de logout.
 }
@@ -38,6 +42,7 @@ interface ContextoAuthTipo {
 const ContextoAuth = createContext<ContextoAuthTipo>({
   usuario: null,
   carregando: true,
+  responsaveis: listaResponsaveisCasa,
   entrarComGoogle: async () => {},
   sair: async () => {},
 });
@@ -113,7 +118,15 @@ export function ProvedorAuth({ children }: { children: ReactNode }) {
   };
 
   return (
-    <ContextoAuth.Provider value={{ usuario, carregando, entrarComGoogle, sair }}>
+    <ContextoAuth.Provider
+      value={{
+        usuario,
+        carregando,
+        responsaveis: listaResponsaveisCasa,
+        entrarComGoogle,
+        sair,
+      }}
+    >
       {children}
     </ContextoAuth.Provider>
   );
