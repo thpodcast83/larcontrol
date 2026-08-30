@@ -134,7 +134,7 @@ export function PaginaFinancas() {
   const [vencimento, setVencimento] = useState('');
   const [statusConta, setStatusConta] = useState<'Paga' | 'Pendente'>('Pendente');
   const [fixa, setFixa] = useState(false);
-  const [responsavelId, setResponsavelId] = useState(''); // Estado para o responsável selecionado
+  const [responsavelNome, setResponsavelNome] = useState(''); // Estado alterado para armazenar a string direta do responsável
 
   // Campos específicos para Cartão / Parcelamento
   const [cartaoOrigem, setCartaoOrigem] = useState('Nubank');
@@ -318,7 +318,6 @@ export function PaginaFinancas() {
     const valorParcelaCalc = numP > 0 ? valorTotalNum / numP : valorTotalNum;
 
     const regraGlobal = configCartoes[cartaoOrigem] || configCartoes['Outros'] || { fechamento: '3', vencimento: '10', jurosMes: 2.75 };
-    const responsavelObj = responsaveis?.find((r: any) => r.id === responsavelId);
 
     const dados = {
       descricao: descricao.trim(),
@@ -335,8 +334,8 @@ export function PaginaFinancas() {
       diaFechamento: regraGlobal.fechamento,
       diaVencimento: regraGlobal.vencimento,
       taxaJurosMes: regraGlobal.jurosMes,
-      responsavelId: responsavelId || '',
-      responsavelNome: responsavelObj?.nome || 'Não atribuído',
+      responsavelId: '', 
+      responsavelNome: responsavelNome || 'Não atribuído',
     };
 
     if (editandoContaId) {
@@ -392,7 +391,7 @@ export function PaginaFinancas() {
     setTipoPagamento(conta.ehParcelado ? 'parcelado' : 'a-vista');
     setNumeroParcelas(String(conta.numeroParcelas || 1));
     setParcelaAtual(String(conta.parcelaAtual || 1));
-    setResponsavelId(conta.responsavelId || '');
+    setResponsavelNome(conta.responsavelNome || '');
     setModalContaAberto(true);
   };
 
@@ -408,7 +407,7 @@ export function PaginaFinancas() {
     setTipoPagamento('a-vista');
     setNumeroParcelas('1');
     setParcelaAtual('1');
-    setResponsavelId('');
+    setResponsavelNome('');
   };
 
   const fecharModalConta = () => {
@@ -862,14 +861,14 @@ export function PaginaFinancas() {
           <div>
             <label className="block text-xs font-bold text-white mb-1">Responsável pela Conta</label>
             <select
-              value={responsavelId}
-              onChange={(e) => setResponsavelId(e.target.value)}
+              value={responsavelNome}
+              onChange={(e) => setResponsavelNome(e.target.value)}
               className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
             >
               <option value="">Selecione um responsável...</option>
-              {responsaveis?.map((resp: any) => (
-                <option key={resp.id} value={resp.id} className="bg-slate-800 text-white">
-                  {resp.nome}
+              {responsaveis?.map((resp: string) => (
+                <option key={resp} value={resp} className="bg-slate-800 text-white">
+                  {resp}
                 </option>
               ))}
             </select>
