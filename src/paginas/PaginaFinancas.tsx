@@ -29,6 +29,8 @@ import {
   CreditCard,
   Calculator,
   Pencil,
+  Search,
+  X,
 } from 'lucide-react';
 
 const categoriasConta = [
@@ -65,6 +67,9 @@ export function PaginaFinancas() {
   const [modalContaAberto, setModalContaAberto] = useState(false);
   const [modalDividaAberto, setModalDividaAberto] = useState(false);
   const [editandoContaId, setEditandoContaId] = useState<string | null>(null);
+
+  // Campo de pesquisa/filtro
+  const [termoBusca, setTermoBusca] = useState('');
 
   // Campos do formulário de conta / cartão / parcelamento
   const [descricao, setDescricao] = useState('');
@@ -136,6 +141,18 @@ export function PaginaFinancas() {
       cancelarDividas();
     };
   }, []);
+
+  // Filtragem de contas com base na busca
+  const contasFiltradas = useMemo(() => {
+    if (!termoBusca.trim()) return contas;
+    const buscaLower = termoBusca.toLowerCase();
+    return contas.filter(
+      (c) =>
+        c.descricao.toLowerCase().includes(buscaLower) ||
+        c.categoria.toLowerCase().includes(buscaLower) ||
+        (c.cartaoOrigem && c.cartaoOrigem.toLowerCase().includes(buscaLower))
+    );
+  }, [contas, termoBusca]);
 
   const totalPendente = useMemo(
     () => contas.filter((c) => c.status === 'Pendente').reduce((acc, c) => acc + (c.valorParcela || c.valor), 0),
@@ -341,7 +358,7 @@ export function PaginaFinancas() {
 
   const gerarPdf = () => {
     const colunas = ['Descrição', 'Categoria', 'Origem', 'Vencimento', 'Status', 'Valor'];
-    const linhas = contas.map((c) => [
+    const linhas = contasFiltradas.map((c) => [
       c.descricao,
       c.categoria,
       c.cartaoOrigem || '-',
@@ -460,35 +477,61 @@ export function PaginaFinancas() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          onClick={() => {
-            limparFormularioConta();
-            setModalContaAberto(true);
-          }}
-          className="botao-primario"
-        >
-          <Plus size={18} />
-          Adicionar conta ou fatura
-        </button>
-        <button onClick={() => setModalDividaAberto(true)} className="botao-secundario">
-          <Calculator size={18} />
-          Simulador empréstimo
-        </button>
-        <button onClick={gerarPdf} className="botao-secundario">
-          <FileText size={18} />
-          Exportar PDF
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => {
+              limparFormularioConta();
+              setModalContaAberto(true);
+            }}
+            className="botao-primario"
+          >
+            <Plus size={18} />
+            Adicionar conta ou fatura
+          </button>
+          <button onClick={() => setModalDividaAberto(true)} className="botao-secundario">
+            <Calculator size={18} />
+            Simulador empréstimo
+          </button>
+          <button onClick={gerarPdf} className="botao-secundario">
+            <FileText size={18} />
+            Exportar PDF
+          </button>
+        </div>
+
+        {/* Campo de Busca / Filtro por Nome ou Compra */}
+        <div className="relative w-full sm:w-72">
+          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Pesquisar compra, cartão..."
+            value={termoBusca}
+            onChange={(e) => setTermoBusca(e.target.value)}
+            className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm shadow-sm"
+          />
+          {termoBusca && (
+            <button
+              onClick={() => setTermoBusca('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-3">
-        {contas.length === 0 ? (
+        {contasFiltradas.length === 0 ? (
           <div className="cartao text-center py-12 text-slate-400">
             <Wallet size={40} className="mx-auto mb-3 opacity-40" />
-            <p>Nenhuma conta ou fatura registrada ainda.</p>
+            <p>
+              {contas.length === 0
+                ? 'Nenhuma conta ou fatura registrada ainda.'
+                : 'Nenhuma conta encontrada com o termo pesquisado.'}
+            </p>
           </div>
         ) : (
-          contas.map((c) => (
+          contasFiltradas.map((c) => (
             <div key={c.id} className="cartao flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animar-entrada p-4">
               <div className="flex items-center gap-3">
                 <div className={`p-2 rounded-lg ${coresCategoria[c.categoria] || 'bg-teal-500'} text-white`}>
@@ -638,7 +681,6 @@ export function PaginaFinancas() {
             </div>
           </div>
 
-          {/* Seleção de À vista ou Parcelado com Parcela Atual */}
           <div className="p-3 bg-slate-800 rounded-xl space-y-3 border border-slate-700">
             <label className="block text-xs font-bold text-white">Tipo de Pagamento</label>
             <div className="flex gap-2">
