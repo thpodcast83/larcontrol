@@ -2,6 +2,7 @@
  * PaginaFinancas.tsx
  * -----------------------------------------------------------------------------
  * Módulo de Saúde Financeira, Cartões, Faturas Parceladas e Empréstimos.
+ * Integrado para buscar os responsáveis diretamente da coleção do Firestore.
  * -----------------------------------------------------------------------------
  */
 import { useEffect, useState, useMemo } from 'react';
@@ -19,7 +20,6 @@ import type { Conta, Divida } from '@/tipos';
 import { formatarMoeda } from '@/utils/utilFormato';
 import { gerarPdfGenerico } from '@/utils/utilPdf';
 import { Modal } from '@/componentes/Modal';
-import { useAuth } from '@/contextos/ContextoAuth'; // Importação do contexto de autenticação
 import {
   Wallet,
   Plus,
@@ -106,10 +106,12 @@ function converterParaNumero(val: string): number {
 }
 
 export function PaginaFinancas() {
-  const { responsaveis } = useAuth(); // Extraindo os responsáveis da casa globalmente
   const [contas, setContas] = useState<Conta[]>([]);
   const [dividas, setDividas] = useState<Divida[]>([]);
   const [configCartoes, setConfigCartoes] = useState<Record<string, RegraCartao>>({});
+  
+  // Estado para armazenar os responsáveis buscados do Firestore
+  const [responsaveisBanco, setResponsaveisBanco] = useState<string[]>([]);
   
   const [modalContaAberto, setModalContaAberto] = useState(false);
   const [modalDividaAberto, setModalDividaAberto] = useState(false);
@@ -134,7 +136,7 @@ export function PaginaFinancas() {
   const [vencimento, setVencimento] = useState('');
   const [statusConta, setStatusConta] = useState<'Paga' | 'Pendente'>('Pendente');
   const [fixa, setFixa] = useState(false);
-  const [responsavelNome, setResponsavelNome] = useState(''); // Estado alterado para armazenar a string direta do responsável
+  const [responsavelNome, setResponsavelNome] = useState('');
 
   // Campos específicos para Cartão / Parcelamento
   const [cartaoOrigem, setCartaoOrigem] = useState('Nubank');
@@ -196,7 +198,6 @@ export function PaginaFinancas() {
     const cancelarConfig = onSnapshot(collection(banco, 'config_cartoes'), (snapshot) => {
       const configsMap: Record<string, RegraCartao> = {};
       
-      // Inicializar com padrões
       Object.entries(regrasPadraoIniciais).forEach(([k, v]) => {
         configsMap[k] = { id: k, ...v };
       });
@@ -218,10 +219,25 @@ export function PaginaFinancas() {
       setConfigCartoes(configsMap);
     });
 
+    // Sincronizar usuários/responsáveis diretamente da coleção do Firestore (ex: "usuarios" ou "membros")
+    const cancelarUsuarios = onSnapshot(collection(banco, 'usuarios'), (snapshot) => {
+      const nomes: string[] = [];
+      snapshot.forEach((docSnap) => {
+        const dados = docSnap.data();
+        // Ajuste para pegar o campo de nome real cadastrado no banco (ex: nome, displayName, email)
+        const nomeUsuario = dados.nome || dados.displayName || dados.email;
+        if (nomeUsuario && !nomes.includes(nomeUsuario)) {
+          nomes.push(nomeUsuario);
+        }
+      });
+      setResponsaveisBanco(nomes);
+    });
+
     return () => {
       cancelarContas();
       cancelarDividas();
       cancelarConfig();
+      cancelarUsuarios();
     };
   }, []);
 
@@ -250,7 +266,6 @@ export function PaginaFinancas() {
 
   const totalGeral = useMemo(() => contas.reduce((acc, c) => acc + (c.valorParcela || c.valor), 0), [contas]);
 
-  // Relatório consolidado por cartão utilizando as Regras salvas
   const relatorioCartoes = useMemo(() => {
     const mapa: Record<string, { totalFatura: number, parcelamentos: any[], vencimento: string, fechamento: string, jurosEstimado: number }> = {};
     const hoje = new Date();
@@ -866,7 +881,7 @@ export function PaginaFinancas() {
               className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
             >
               <option value="">Selecione um responsável...</option>
-              {responsaveis?.map((resp: string) => (
+              {responsaveisBanco.map((resp: string) => (
                 <option key={resp} value={resp} className="bg-slate-800 text-white">
                   {resp}
                 </option>
