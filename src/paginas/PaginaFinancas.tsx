@@ -19,6 +19,7 @@ import type { Conta, Divida } from '@/tipos';
 import { formatarMoeda } from '@/utils/utilFormato';
 import { gerarPdfGenerico } from '@/utils/utilPdf';
 import { Modal } from '@/componentes/Modal';
+import { useAuth } from '@/contextos/ContextoAuth'; // Importação do contexto de autenticação
 import {
   Wallet,
   Plus,
@@ -105,6 +106,7 @@ function converterParaNumero(val: string): number {
 }
 
 export function PaginaFinancas() {
+  const { responsaveis } = useAuth(); // Extraindo os responsáveis da casa globalmente
   const [contas, setContas] = useState<Conta[]>([]);
   const [dividas, setDividas] = useState<Divida[]>([]);
   const [configCartoes, setConfigCartoes] = useState<Record<string, RegraCartao>>({});
@@ -132,6 +134,7 @@ export function PaginaFinancas() {
   const [vencimento, setVencimento] = useState('');
   const [statusConta, setStatusConta] = useState<'Paga' | 'Pendente'>('Pendente');
   const [fixa, setFixa] = useState(false);
+  const [responsavelId, setResponsavelId] = useState(''); // Estado para o responsável selecionado
 
   // Campos específicos para Cartão / Parcelamento
   const [cartaoOrigem, setCartaoOrigem] = useState('Nubank');
@@ -166,6 +169,8 @@ export function PaginaFinancas() {
           diaFechamento: dados.diaFechamento || '',
           diaVencimento: dados.diaVencimento || '',
           taxaJurosMes: dados.taxaJurosMes || 0,
+          responsavelId: dados.responsavelId || '',
+          responsavelNome: dados.responsavelNome || '',
         });
       });
       setContas(lista);
@@ -228,7 +233,8 @@ export function PaginaFinancas() {
       (c) =>
         c.descricao.toLowerCase().includes(buscaLower) ||
         c.categoria.toLowerCase().includes(buscaLower) ||
-        (c.cartaoOrigem && c.cartaoOrigem.toLowerCase().includes(buscaLower))
+        (c.cartaoOrigem && c.cartaoOrigem.toLowerCase().includes(buscaLower)) ||
+        (c.responsavelNome && c.responsavelNome.toLowerCase().includes(buscaLower))
     );
   }, [contas, termoBusca]);
 
@@ -312,6 +318,7 @@ export function PaginaFinancas() {
     const valorParcelaCalc = numP > 0 ? valorTotalNum / numP : valorTotalNum;
 
     const regraGlobal = configCartoes[cartaoOrigem] || configCartoes['Outros'] || { fechamento: '3', vencimento: '10', jurosMes: 2.75 };
+    const responsavelObj = responsaveis?.find((r: any) => r.id === responsavelId);
 
     const dados = {
       descricao: descricao.trim(),
@@ -328,6 +335,8 @@ export function PaginaFinancas() {
       diaFechamento: regraGlobal.fechamento,
       diaVencimento: regraGlobal.vencimento,
       taxaJurosMes: regraGlobal.jurosMes,
+      responsavelId: responsavelId || '',
+      responsavelNome: responsavelObj?.nome || 'Não atribuído',
     };
 
     if (editandoContaId) {
@@ -357,7 +366,6 @@ export function PaginaFinancas() {
       descricaoRegra: configCartoes[cartaoEditandoConfig]?.descricaoRegra || 'Regras personalizadas do cartão.',
     };
 
-    // Salva no Firestore usando o nome do cartão como ID do documento para fácil mapeamento
     await setDoc(doc(banco, 'config_cartoes', cartaoEditandoConfig), dadosRegra);
     setModalConfigCartaoAberto(false);
   };
@@ -384,6 +392,7 @@ export function PaginaFinancas() {
     setTipoPagamento(conta.ehParcelado ? 'parcelado' : 'a-vista');
     setNumeroParcelas(String(conta.numeroParcelas || 1));
     setParcelaAtual(String(conta.parcelaAtual || 1));
+    setResponsavelId(conta.responsavelId || '');
     setModalContaAberto(true);
   };
 
@@ -399,6 +408,7 @@ export function PaginaFinancas() {
     setTipoPagamento('a-vista');
     setNumeroParcelas('1');
     setParcelaAtual('1');
+    setResponsavelId('');
   };
 
   const fecharModalConta = () => {
@@ -458,10 +468,11 @@ export function PaginaFinancas() {
   };
 
   const gerarPdf = () => {
-    const colunas = ['Descrição', 'Categoria', 'Origem', 'Vencimento', 'Status', 'Valor'];
+    const colunas = ['Descrição', 'Categoria', 'Responsável', 'Origem', 'Vencimento', 'Status', 'Valor'];
     const linhas = contasFiltradas.map((c) => [
       c.descricao,
       c.categoria,
+      c.responsavelNome || '-',
       c.cartaoOrigem || '-',
       c.vencimento,
       c.status,
@@ -618,7 +629,7 @@ export function PaginaFinancas() {
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Pesquisar compra, cartão..."
+            placeholder="Pesquisar compra, cartão, responsável..."
             value={termoBusca}
             onChange={(e) => setTermoBusca(e.target.value)}
             className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm shadow-sm"
@@ -655,6 +666,7 @@ export function PaginaFinancas() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-semibold text-slate-900 dark:text-slate-100">{c.descricao}</h3>
                     {c.cartaoOrigem && <span className="badge bg-teal-50 text-teal-700 text-xs">{c.cartaoOrigem}</span>}
+                    {c.responsavelNome && <span className="badge bg-indigo-50 text-indigo-700 text-xs">👤 {c.responsavelNome}</span>}
                     {c.ehParcelado && (
                       <span className="badge bg-purple-50 text-purple-700 text-xs">
                         Parcela {c.parcelaAtual || 1}/{c.numeroParcelas}
@@ -847,6 +859,22 @@ export function PaginaFinancas() {
             </div>
           </div>
 
+          <div>
+            <label className="block text-xs font-bold text-white mb-1">Responsável pela Conta</label>
+            <select
+              value={responsavelId}
+              onChange={(e) => setResponsavelId(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+            >
+              <option value="">Selecione um responsável...</option>
+              {responsaveis?.map((resp: any) => (
+                <option key={resp.id} value={resp.id} className="bg-slate-800 text-white">
+                  {resp.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-white mb-1">Valor Total (R$)</label>
@@ -982,7 +1010,7 @@ export function PaginaFinancas() {
               type="text"
               placeholder="Ex: Empréstimo Pessoal"
               value={descDivida}
-              onChange={(e) => setDescricao(e.target.value)}
+              onChange={(e) => setDescDivida(e.target.value)}
               className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               autoFocus
             />
