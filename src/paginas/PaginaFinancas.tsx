@@ -219,15 +219,15 @@ export function PaginaFinancas() {
       setConfigCartoes(configsMap);
     });
 
-    // Sincronizar usuários/responsáveis diretamente da coleção do Firestore (ex: "usuarios" ou "membros")
-    const cancelarUsuarios = onSnapshot(collection(banco, 'usuarios'), (snapshot) => {
+    // Sincronizar usuários diretamente da coleção 'users' (conforme print do Firebase Authentication/Firestore)
+    const cancelarUsuarios = onSnapshot(collection(banco, 'users'), (snapshot) => {
       const nomes: string[] = [];
       snapshot.forEach((docSnap) => {
         const dados = docSnap.data();
-        // Ajuste para pegar o campo de nome real cadastrado no banco (ex: nome, displayName, email)
-        const nomeUsuario = dados.nome || dados.displayName || dados.email;
-        if (nomeUsuario && !nomes.includes(nomeUsuario)) {
-          nomes.push(nomeUsuario);
+        // Coleta o e-mail ou nome para listar corretamente os usuários reais
+        const identificadorUsuario = dados.email || dados.nome || dados.displayName;
+        if (identificadorUsuario && !nomes.includes(identificadorUsuario)) {
+          nomes.push(identificadorUsuario);
         }
       });
       setResponsaveisBanco(nomes);
