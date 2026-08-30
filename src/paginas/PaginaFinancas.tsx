@@ -31,6 +31,7 @@ import {
   Pencil,
   Search,
   X,
+  Info,
 } from 'lucide-react';
 
 const categoriasConta = [
@@ -55,6 +56,34 @@ const coresCategoria: Record<string, string> = {
   Outros: 'bg-slate-500',
 };
 
+// Configurações globais padrão para os cartões (Regras fixas da instituição)
+const regrasCartoesPadrao: Record<string, { fechamento: string; vencimento: string; jurosMes: number; descricaoRegra: string }> = {
+  Nubank: {
+    fechamento: '5',
+    vencimento: '12',
+    jurosMes: 2.75,
+    descricaoRegra: 'Rotativo de 2,75% a 19,99% a.m. Multa de 2% por atraso + Juros de mora de 1% a.m. Respeita o teto de 100% do valor da dívida (Regra do Banco Central).',
+  },
+  Shopee: {
+    fechamento: '10',
+    vencimento: '20',
+    jurosMes: 5.9,
+    descricaoRegra: 'Cartão co-branded com regras de juros e parcelamento específicos da parceira.',
+  },
+  Itaú: {
+    fechamento: '1',
+    vencimento: '10',
+    jurosMes: 9.9,
+    descricaoRegra: 'Rotativo padrão de mercado e encargos por atraso conforme contrato do banco.',
+  },
+  Outros: {
+    fechamento: '10',
+    vencimento: '20',
+    jurosMes: 10.0,
+    descricaoRegra: 'Condições gerais para cartões diversos.',
+  },
+};
+
 function converterParaNumero(val: string): number {
   if (!val) return 0;
   const limpo = val.replace(/\./g, '').replace(',', '.');
@@ -66,12 +95,13 @@ export function PaginaFinancas() {
   const [dividas, setDividas] = useState<Divida[]>([]);
   const [modalContaAberto, setModalContaAberto] = useState(false);
   const [modalDividaAberto, setModalDividaAberto] = useState(false);
+  const [modalRegrasAberto, setModalRegrasAberto] = useState(false);
   const [editandoContaId, setEditandoContaId] = useState<string | null>(null);
 
   // Campo de pesquisa/filtro
   const [termoBusca, setTermoBusca] = useState('');
 
-  // Campos do formulário de conta / cartão / parcelamento
+  // Campos do formulário de conta / cartão / parcelamento (Sem poluir com dados gerais do cartão)
   const [descricao, setDescricao] = useState('');
   const [categoria, setCategoria] = useState<Conta['categoria']>('Fatura de Cartão');
   const [valor, setValor] = useState('');
@@ -79,14 +109,11 @@ export function PaginaFinancas() {
   const [statusConta, setStatusConta] = useState<'Paga' | 'Pendente'>('Pendente');
   const [fixa, setFixa] = useState(false);
 
-  // Campos específicos para Cartão / Parcelamento / Empréstimo
+  // Campos específicos para Cartão / Parcelamento
   const [cartaoOrigem, setCartaoOrigem] = useState('Nubank');
   const [tipoPagamento, setTipoPagamento] = useState<'a-vista' | 'parcelado'>('a-vista');
   const [numeroParcelas, setNumeroParcelas] = useState('1');
   const [parcelaAtual, setParcelaAtual] = useState('1');
-  const [diaFechamento, setDiaFechamento] = useState('5');
-  const [diaVencimento, setDiaVencimento] = useState('12');
-  const [taxaJurosMes, setTaxaJurosMes] = useState('14');
 
   // Campos do simulador de dívida/empréstimo
   const [descDivida, setDescDivida] = useState('');
@@ -166,6 +193,7 @@ export function PaginaFinancas() {
 
   const totalGeral = useMemo(() => contas.reduce((acc, c) => acc + (c.valorParcela || c.valor), 0), [contas]);
 
+  // Relatório consolidado por cartão utilizando as Regras Globais da Instituição
   const relatorioCartoes = useMemo(() => {
     const mapa: Record<string, { totalFatura: number, parcelamentos: any[], vencimento: string, fechamento: string, jurosEstimado: number }> = {};
     const hoje = new Date();
@@ -173,12 +201,14 @@ export function PaginaFinancas() {
     contas.forEach((c) => {
       if (c.categoria === 'Fatura de Cartão' || c.categoria === 'Compras Online' || c.categoria === 'Empréstimo') {
         const nomeCartao = c.cartaoOrigem || 'Geral';
+        const regraGlobal = regrasCartoesPadrao[nomeCartao] || regrasCartoesPadrao['Outros'];
+
         if (!mapa[nomeCartao]) {
           mapa[nomeCartao] = {
             totalFatura: 0,
             parcelamentos: [],
-            vencimento: c.diaVencimento || '10',
-            fechamento: c.diaFechamento || '03',
+            vencimento: regraGlobal.vencimento,
+            fechamento: regraGlobal.fechamento,
             jurosEstimado: 0,
           };
         }
@@ -196,10 +226,12 @@ export function PaginaFinancas() {
             const dataVencObj = new Date(parseInt(partesVenc[2]), parseInt(partesVenc[1]) - 1, parseInt(partesVenc[0]));
             if (hoje > dataVencObj) {
               const diffDias = Math.ceil((hoje.getTime() - dataVencObj.getTime()) / (1000 * 60 * 60 * 24));
-              const taxaMes = c.taxaJurosMes || 14;
+              const taxaMes = regraGlobal.jurosMes;
               const jurosDia = (taxaMes / 100) / 30;
-              const valorJuros = valParcela * jurosDia * diffDias;
-              mapa[nomeCartao].jurosEstimado += valorJuros;
+              // Multa de 2% + juros proporcionais por dia de atraso
+              const multaAtraso = valParcela * 0.02;
+              const valorJurosMora = valParcela * jurosDia * diffDias;
+              mapa[nomeCartao].jurosEstimado += (multaAtraso + valorJurosMora);
             }
           }
         }
@@ -229,6 +261,9 @@ export function PaginaFinancas() {
     const atualP = parceladoReal ? parseInt(parcelaAtual, 10) || 1 : 1;
     const valorParcelaCalc = numP > 0 ? valorTotalNum / numP : valorTotalNum;
 
+    // Pega os padrões globais do cartão selecionado de forma automática
+    const regraGlobal = regrasCartoesPadrao[cartaoOrigem] || regrasCartoesPadrao['Outros'];
+
     const dados = {
       descricao: descricao.trim(),
       categoria,
@@ -241,9 +276,9 @@ export function PaginaFinancas() {
       numeroParcelas: numP,
       parcelaAtual: atualP,
       valorParcela: valorParcelaCalc,
-      diaFechamento,
-      diaVencimento,
-      taxaJurosMes: converterParaNumero(taxaJurosMes),
+      diaFechamento: regraGlobal.fechamento,
+      diaVencimento: regraGlobal.vencimento,
+      taxaJurosMes: regraGlobal.jurosMes,
     };
 
     if (editandoContaId) {
@@ -277,9 +312,6 @@ export function PaginaFinancas() {
     setTipoPagamento(conta.ehParcelado ? 'parcelado' : 'a-vista');
     setNumeroParcelas(String(conta.numeroParcelas || 1));
     setParcelaAtual(String(conta.parcelaAtual || 1));
-    setDiaFechamento(conta.diaFechamento || '5');
-    setDiaVencimento(conta.diaVencimento || '12');
-    setTaxaJurosMes(String(conta.taxaJurosMes || 14));
     setModalContaAberto(true);
   };
 
@@ -295,9 +327,6 @@ export function PaginaFinancas() {
     setTipoPagamento('a-vista');
     setNumeroParcelas('1');
     setParcelaAtual('1');
-    setDiaFechamento('5');
-    setDiaVencimento('12');
-    setTaxaJurosMes('14');
   };
 
   const fecharModalConta = () => {
@@ -382,14 +411,23 @@ export function PaginaFinancas() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-          <Wallet className="text-primaria-700" />
-          Finanças e Faturas de Cartão
-        </h1>
-        <p className="text-slate-500 text-sm mt-1">
-          Gestão inteligente de cartões, fechamento, vencimento, parcelas e juros por atraso.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <Wallet className="text-primaria-700" />
+            Finanças e Faturas de Cartão
+          </h1>
+          <p className="text-slate-500 text-sm mt-1">
+            Gestão inteligente de cartões, regras institucionais automáticas, parcelas e encargos.
+          </p>
+        </div>
+        <button
+          onClick={() => setModalRegrasAberto(true)}
+          className="botao-secundario flex items-center gap-1.5 text-xs self-start"
+        >
+          <Info size={16} className="text-teal-600" />
+          Regras e Taxas dos Bancos
+        </button>
       </div>
 
       {Object.keys(relatorioCartoes).length > 0 && (
@@ -401,7 +439,7 @@ export function PaginaFinancas() {
                   <CreditCard size={18} className="text-teal-600" /> {nomeCartao}
                 </h3>
                 <span className="badge bg-teal-50 text-teal-700 text-xs font-semibold">
-                  Fatura Atual
+                  Regras Gerais Ativas
                 </span>
               </div>
               <div className="pt-2">
@@ -417,7 +455,7 @@ export function PaginaFinancas() {
                 </div>
                 {dados.jurosEstimado > 0 && (
                   <div className="flex items-center gap-1 text-red-600 font-semibold pt-1">
-                    <AlertCircle size={14} /> Juros por atraso estimado: {formatarMoeda(dados.jurosEstimado)}
+                    <AlertCircle size={14} /> Juros/Multa atraso estimada: {formatarMoeda(dados.jurosEstimado)}
                   </div>
                 )}
                 {dados.parcelamentos.length > 0 && (
@@ -436,7 +474,7 @@ export function PaginaFinancas() {
           <div className="flex items-center gap-2 text-slate-500 text-sm mb-1">
             <Wallet size={16} /> Total geral
           </div>
-          <p className="text-2xl font-bold text-slate-900">{formatarMoeda(totalGeral)}</p>
+          <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{formatarMoeda(totalGeral)}</p>
         </div>
         <div className="cartao">
           <div className="flex items-center gap-2 text-green-600 text-sm mb-1">
@@ -611,7 +649,40 @@ export function PaginaFinancas() {
         </div>
       )}
 
-      {/* === Modal de conta / cartão / compra à vista ou parcelada === */}
+      {/* === Modal de Regras Globais e Taxas dos Bancos === */}
+      <Modal
+        aberto={modalRegrasAberto}
+        onFechar={() => setModalRegrasAberto(false)}
+        titulo="Regras Oficiais e Taxas dos Cartões"
+      >
+        <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1 text-sm text-slate-200">
+          <div className="p-3 bg-slate-800 rounded-xl border border-slate-700 space-y-2">
+            <h3 className="font-bold text-teal-400 flex items-center gap-1.5">
+              <CreditCard size={16} /> Nubank (Configuração Padrão Geral)
+            </h3>
+            <ul className="list-disc list-inside space-y-1.5 text-xs text-slate-300">
+              <li><strong>Fechamento:</strong> Dia 5 | <strong>Vencimento:</strong> Dia 12</li>
+              <li><strong>Crédito Rotativo:</strong> Geralmente entre 2,75% e 19,99% ao mês (varia conforme perfil e entra em vigor ao pagar menos que o mínimo).</li>
+              <li><strong>Teto Legal da Dívida (BC):</strong> O total acumulado de juros e encargos do rotativo não pode ultrapassar 100% do valor original da dívida.</li>
+              <li><strong>Multa de Atraso:</strong> 2% fixo sobre o valor em atraso (por lei).</li>
+              <li><strong>Juros de Mora:</strong> 1% ao mês proporcional aos dias de atraso.</li>
+              <li><strong>Empréstimo Pessoal:</strong> Taxas personalizadas a partir de 1% a 2% ao mês dependendo do score.</li>
+              <li><strong>Saques na função crédito:</strong> Em torno de 9,75% ao mês + IOF.</li>
+            </ul>
+          </div>
+
+          <div className="p-3 bg-slate-800 rounded-xl border border-slate-700 space-y-2">
+            <h3 className="font-bold text-teal-400 flex items-center gap-1.5">
+              <CreditCard size={16} /> Shopee Pay / Outros Cartões
+            </h3>
+            <p className="text-xs text-slate-300">
+              Gerenciados automaticamente com base nas diretrizes e termos de uso informados por cada emissor no momento da contratação.
+            </p>
+          </div>
+        </div>
+      </Modal>
+
+      {/* === Modal de conta / cartão / compra à vista ou parcelada (Sem campos repetitivos de fechamento/juros) === */}
       <Modal
         aberto={modalContaAberto}
         onFechar={fecharModalConta}
@@ -649,7 +720,7 @@ export function PaginaFinancas() {
                 onChange={(e) => setCartaoOrigem(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               >
-                <option value="Nubank" className="bg-slate-800 text-white">Nubank</option>
+                <option value="Nubank" className="bg-slate-800 text-white">Nubank (Fech: 5 | Venc: 12)</option>
                 <option value="Shopee" className="bg-slate-800 text-white">Shopee</option>
                 <option value="Itaú" className="bg-slate-800 text-white">Itaú</option>
                 <option value="Outros" className="bg-slate-800 text-white">Outros</option>
@@ -740,36 +811,6 @@ export function PaginaFinancas() {
                 </div>
               </div>
             )}
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-white mb-1">Dia Fechamento</label>
-              <input
-                type="text"
-                value={diaFechamento}
-                onChange={(e) => setDiaFechamento(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-white mb-1">Dia Vencimento</label>
-              <input
-                type="text"
-                value={diaVencimento}
-                onChange={(e) => setDiaVencimento(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-white mb-1">Juros Rotativo (%/mês)</label>
-              <input
-                type="text"
-                value={taxaJurosMes}
-                onChange={(e) => setTaxaJurosMes(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
-              />
-            </div>
           </div>
 
           <div className="flex gap-2">
