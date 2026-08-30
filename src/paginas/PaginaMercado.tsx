@@ -27,6 +27,7 @@ import { Modal } from '@/componentes/Modal';
 import {
   ShoppingCart,
   Plus,
+  Minus,
   Trash2,
   MapPin,
   Wallet,
@@ -52,13 +53,29 @@ function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
     subtotalCalculado = (qNum / 1000) * pNum;
   }
 
-  const handleSalvarNoCarrinho = async () => {
+  const handleSalvarNoCarrinho = async (novaQtdValor: number) => {
+    let novoSubtotal = novaQtdValor * pNum;
+    if (unidadeEditada === 'g') {
+      novoSubtotal = (novaQtdValor / 1000) * pNum;
+    }
+
     await updateDoc(doc(banco, 'carrinho_atual', item.id), {
-      quantidade: qNum,
+      quantidade: novaQtdValor,
       unidade: unidadeEditada,
       precoUnitario: pNum,
-      subtotal: subtotalCalculado,
+      subtotal: novoSubtotal,
     });
+  };
+
+  const alterarQuantidade = (delta: number) => {
+    const passo = unidadeEditada === 'kg' ? 0.1 : 1;
+    const novaQtd = Math.max(0, parseFloat((qNum + delta * passo).toFixed(2)));
+    setQtdEditada(novaQtd.toString());
+    handleSalvarNoCarrinho(novaQtd);
+  };
+
+  const salvarManual = async () => {
+    await handleSalvarNoCarrinho(qNum);
   };
 
   const removerItem = async () => {
@@ -85,13 +102,31 @@ function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-center">
         <div>
           <label className="text-[10px] text-slate-400 block">Quantidade / Peso</label>
-          <input
-            type="text"
-            inputMode="decimal"
-            value={qtdEditada}
-            onChange={(e) => setQtdEditada(e.target.value)}
-            className="campo-entrada text-sm py-1.5 px-2"
-          />
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => alterarQuantidade(-1)}
+              className="bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 p-2 rounded-lg border border-slate-200 dark:border-slate-700 transition-all"
+              title="Diminuir"
+            >
+              <Minus size={14} />
+            </button>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={qtdEditada}
+              onChange={(e) => setQtdEditada(e.target.value)}
+              className="campo-entrada text-sm py-1.5 px-2 text-center"
+            />
+            <button
+              type="button"
+              onClick={() => alterarQuantidade(1)}
+              className="bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 p-2 rounded-lg border border-slate-200 dark:border-slate-700 transition-all"
+              title="Aumentar"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
         </div>
 
         <div>
@@ -120,7 +155,7 @@ function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
 
         <div className="flex items-end h-full pt-2 sm:pt-0">
           <button
-            onClick={handleSalvarNoCarrinho}
+            onClick={salvarManual}
             className="botao-primario text-xs w-full py-2"
             type="button"
           >
@@ -224,7 +259,6 @@ export function PaginaMercado() {
   const dGlobalNum = parseFloat(descontoGlobal.replace(',', '.')) || 0;
   const totalGasto = Math.max(0, totalBruto - dGlobalNum);
   const saldo = teto - totalGasto;
-  const percentual = teto > 0 ? Math.min((totalGasto / teto) * 100, 100) : 0;
 
   const buscarGPS = async () => {
     try {
