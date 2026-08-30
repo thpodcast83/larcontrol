@@ -76,6 +76,7 @@ export function PaginaFinancas() {
 
   // Campos específicos para Cartão / Parcelamento / Empréstimo
   const [cartaoOrigem, setCartaoOrigem] = useState('Nubank');
+  const [tipoPagamento, setTipoPagamento] = useState<'a-vista' | 'parcelado'>('a-vista');
   const [ehParcelado, setEhParcelado] = useState(false);
   const [numeroParcelas, setNumeroParcelas] = useState('1');
   const [diaFechamento, setDiaFechamento] = useState('5');
@@ -201,16 +202,12 @@ export function PaginaFinancas() {
       .filter((c) => c.valor > 0);
   }, [contas]);
 
-  const maiorGasto = useMemo(() => {
-    if (gastosPorCategoria.length === 0) return null;
-    return gastosPorCategoria.reduce((max, c) => (c.valor > max.valor ? c : max));
-  }, [gastosPorCategoria]);
-
   const salvarConta = async () => {
     if (!descricao.trim() || !valor) return;
 
     const valorTotalNum = converterParaNumero(valor);
-    const numP = ehParcelado ? parseInt(numeroParcelas, 10) || 1 : 1;
+    const parceladoReal = tipoPagamento === 'parcelado';
+    const numP = parceladoReal ? parseInt(numeroParcelas, 10) || 1 : 1;
     const valorParcelaCalc = numP > 0 ? valorTotalNum / numP : valorTotalNum;
 
     const dados = {
@@ -221,7 +218,7 @@ export function PaginaFinancas() {
       status: statusConta,
       fixa,
       cartaoOrigem,
-      ehParcelado,
+      ehParcelado: parceladoReal,
       numeroParcelas: numP,
       valorParcela: valorParcelaCalc,
       diaFechamento,
@@ -257,6 +254,7 @@ export function PaginaFinancas() {
     setStatusConta(conta.status);
     setFixa(conta.fixa);
     setCartaoOrigem(conta.cartaoOrigem || 'Nubank');
+    setTipoPagamento(conta.ehParcelado ? 'parcelado' : 'a-vista');
     setEhParcelado(conta.ehParcelado || false);
     setNumeroParcelas(String(conta.numeroParcelas || 1));
     setDiaFechamento(conta.diaFechamento || '5');
@@ -274,6 +272,7 @@ export function PaginaFinancas() {
     setStatusConta('Pendente');
     setFixa(false);
     setCartaoOrigem('Nubank');
+    setTipoPagamento('a-vista');
     setEhParcelado(false);
     setNumeroParcelas('1');
     setDiaFechamento('5');
@@ -497,10 +496,11 @@ export function PaginaFinancas() {
                     <h3 className="font-semibold text-slate-900 dark:text-slate-100">{c.descricao}</h3>
                     {c.cartaoOrigem && <span className="badge bg-teal-50 text-teal-700 text-xs">{c.cartaoOrigem}</span>}
                     {c.ehParcelado && <span className="badge bg-purple-50 text-purple-700 text-xs">Parcelado ({c.numeroParcelas}x)</span>}
+                    {!c.ehParcelado && <span className="badge bg-blue-50 text-blue-700 text-xs">À vista</span>}
                     {c.fixa && <span className="badge bg-slate-100 text-slate-600 text-xs">Fixa</span>}
                   </div>
                   <p className="text-sm text-slate-500 mt-0.5">
-                    {c.categoria} • Vence: {c.vencimento} • Parcela: <strong className="text-slate-800 dark:text-slate-200">{formatarMoeda(c.valorParcela || c.valor)}</strong>
+                    {c.categoria} • Vence: {c.vencimento} • Valor: <strong className="text-slate-800 dark:text-slate-200">{formatarMoeda(c.valorParcela || c.valor)}</strong>
                   </p>
                 </div>
               </div>
@@ -561,102 +561,119 @@ export function PaginaFinancas() {
         </div>
       )}
 
-      {/* === Modal de conta / cartão / parcelamento com legendas ajustadas para alta visibilidade === */}
+      {/* === Modal de conta / cartão / compra à vista ou parcelada === */}
       <Modal
         aberto={modalContaAberto}
         onFechar={fecharModalConta}
-        titulo={editandoContaId ? 'Editar conta ou fatura' : 'Adicionar conta, cartão ou compra parcelada'}
+        titulo={editandoContaId ? 'Editar conta ou fatura' : 'Adicionar conta, cartão ou compra'}
       >
         <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
           <div>
-            <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Descrição</label>
+            <label className="block text-xs font-bold text-white mb-1">Descrição</label>
             <input
               type="text"
               placeholder="Ex: Compra Shopee / Fatura Nubank / Luz"
               value={descricao}
               onChange={(e) => setDescricao(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+              className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               autoFocus
             />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Categoria</label>
+              <label className="block text-xs font-bold text-white mb-1">Categoria</label>
               <select
                 value={categoria}
                 onChange={(e) => setCategoria(e.target.value as Conta['categoria'])}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               >
                 {categoriasConta.map((cat) => (
-                  <option key={cat} value={cat}>{cat}</option>
+                  <option key={cat} value={cat} className="bg-slate-800 text-white">{cat}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Cartão / Origem</label>
+              <label className="block text-xs font-bold text-white mb-1">Cartão / Origem</label>
               <select
                 value={cartaoOrigem}
                 onChange={(e) => setCartaoOrigem(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               >
-                <option value="Nubank">Nubank</option>
-                <option value="Shopee">Shopee</option>
-                <option value="Itaú">Itaú</option>
-                <option value="Outros">Outros</option>
+                <option value="Nubank" className="bg-slate-800 text-white">Nubank</option>
+                <option value="Shopee" className="bg-slate-800 text-white">Shopee</option>
+                <option value="Itaú" className="bg-slate-800 text-white">Itaú</option>
+                <option value="Outros" className="bg-slate-800 text-white">Outros</option>
               </select>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Valor Total (R$)</label>
+              <label className="block text-xs font-bold text-white mb-1">Valor Total (R$)</label>
               <input
                 type="text"
                 inputMode="decimal"
                 placeholder="Ex: 300,00"
                 value={valor}
                 onChange={(e) => setValor(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Vencimento (dd/mm/aaaa)</label>
+              <label className="block text-xs font-bold text-white mb-1">Vencimento (dd/mm/aaaa)</label>
               <input
                 type="text"
                 placeholder="Ex: 12/09/2026"
                 value={vencimento}
                 onChange={(e) => setVencimento(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
           </div>
 
-          <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl space-y-3 border border-slate-200 dark:border-slate-700">
-            <label className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-slate-100 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={ehParcelado}
-                onChange={(e) => setEhParcelado(e.target.checked)}
-                className="w-4 h-4 rounded accent-teal-600"
-              />
-              Esta compra / fatura é parcelada?
-            </label>
+          {/* Seleção de À vista ou Parcelado */}
+          <div className="p-3 bg-slate-800 rounded-xl space-y-3 border border-slate-700">
+            <label className="block text-xs font-bold text-white">Tipo de Pagamento</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setTipoPagamento('a-vista')}
+                className={`flex-1 py-2 rounded-lg font-semibold text-xs transition-all ${
+                  tipoPagamento === 'a-vista'
+                    ? 'bg-teal-600 text-white shadow'
+                    : 'bg-slate-900 text-slate-300 border border-slate-700'
+                }`}
+              >
+                À vista
+              </button>
+              <button
+                type="button"
+                onClick={() => setTipoPagamento('parcelado')}
+                className={`flex-1 py-2 rounded-lg font-semibold text-xs transition-all ${
+                  tipoPagamento === 'parcelado'
+                    ? 'bg-teal-600 text-white shadow'
+                    : 'bg-slate-900 text-slate-300 border border-slate-700'
+                }`}
+              >
+                Parcelado
+              </button>
+            </div>
 
-            {ehParcelado && (
-              <div className="grid grid-cols-2 gap-3 pt-1">
+            {tipoPagamento === 'parcelado' && (
+              <div className="grid grid-cols-2 gap-3 pt-2">
                 <div>
-                  <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Número de Parcelas</label>
+                  <label className="block text-xs font-bold text-white mb-1">Número de Parcelas</label>
                   <input
                     type="number"
                     min="1"
                     value={numeroParcelas}
                     onChange={(e) => setNumeroParcelas(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-900 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Valor da Parcela</label>
-                  <div className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm font-semibold flex items-center">
+                  <label className="block text-xs font-bold text-white mb-1">Valor da Parcela</label>
+                  <div className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-900 text-white text-sm font-semibold flex items-center">
                     {formatarMoeda((converterParaNumero(valor) / (parseInt(numeroParcelas, 10) || 1)))}
                   </div>
                 </div>
@@ -666,30 +683,30 @@ export function PaginaFinancas() {
 
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Dia Fechamento</label>
+              <label className="block text-xs font-bold text-white mb-1">Dia Fechamento</label>
               <input
                 type="text"
                 value={diaFechamento}
                 onChange={(e) => setDiaFechamento(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Dia Vencimento</label>
+              <label className="block text-xs font-bold text-white mb-1">Dia Vencimento</label>
               <input
                 type="text"
                 value={diaVencimento}
                 onChange={(e) => setDiaVencimento(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Juros Rotativo (%/mês)</label>
+              <label className="block text-xs font-bold text-white mb-1">Juros Rotativo (%/mês)</label>
               <input
                 type="text"
                 value={taxaJurosMes}
                 onChange={(e) => setTaxaJurosMes(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
           </div>
@@ -699,7 +716,7 @@ export function PaginaFinancas() {
               type="button"
               onClick={() => setStatusConta('Pendente')}
               className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                statusConta === 'Pendente' ? 'bg-amber-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                statusConta === 'Pendente' ? 'bg-amber-500 text-white' : 'bg-slate-800 text-slate-300 border border-slate-700'
               }`}
             >
               Pendente
@@ -708,14 +725,14 @@ export function PaginaFinancas() {
               type="button"
               onClick={() => setStatusConta('Paga')}
               className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                statusConta === 'Paga' ? 'bg-green-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                statusConta === 'Paga' ? 'bg-green-600 text-white' : 'bg-slate-800 text-slate-300 border border-slate-700'
               }`}
             >
               Paga
             </button>
           </div>
 
-          <label className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-slate-100 cursor-pointer">
+          <label className="flex items-center gap-2 text-sm font-bold text-white cursor-pointer">
             <input
               type="checkbox"
               checked={fixa}
@@ -739,60 +756,60 @@ export function PaginaFinancas() {
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Descrição do Empréstimo / Dívida</label>
+            <label className="block text-xs font-bold text-white mb-1">Descrição do Empréstimo / Dívida</label>
             <input
               type="text"
               placeholder="Ex: Empréstimo Pessoal"
               value={descDivida}
               onChange={(e) => setDescDivida(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+              className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               autoFocus
             />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Valor (R$)</label>
+              <label className="block text-xs font-bold text-white mb-1">Valor (R$)</label>
               <input
                 type="text"
                 inputMode="decimal"
                 placeholder="Ex: 5000"
                 value={valorDivida}
                 onChange={(e) => setValorDivida(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Juros (%/mês)</label>
+              <label className="block text-xs font-bold text-white mb-1">Juros (%/mês)</label>
               <input
                 type="text"
                 inputMode="decimal"
                 placeholder="Ex: 3.5"
                 value={jurosDivida}
                 onChange={(e) => setJurosDivida(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Parcelas</label>
+              <label className="block text-xs font-bold text-white mb-1">Parcelas</label>
               <input
                 type="text"
                 inputMode="numeric"
                 placeholder="Ex: 12"
                 value={parcelasDivida}
                 onChange={(e) => setParcelasDivida(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
           </div>
           {resultadoDivida && (
-            <div className="bg-teal-50 dark:bg-slate-800 rounded-xl p-4 space-y-2 text-sm border border-teal-200 dark:border-teal-700">
+            <div className="bg-slate-800 rounded-xl p-4 space-y-2 text-sm border border-slate-700">
               <div className="flex justify-between">
-                <span className="text-slate-600 dark:text-slate-300">Valor da parcela:</span>
-                <span className="font-bold text-teal-700 dark:text-teal-400">{formatarMoeda(resultadoDivida.pmt)}</span>
+                <span className="text-slate-300">Valor da parcela:</span>
+                <span className="font-bold text-teal-400">{formatarMoeda(resultadoDivida.pmt)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-600 dark:text-slate-300">Total a pagar:</span>
-                <span className="font-bold text-slate-800 dark:text-slate-100">{formatarMoeda(resultadoDivida.total)}</span>
+                <span className="text-slate-300">Total a pagar:</span>
+                <span className="font-bold text-white">{formatarMoeda(resultadoDivida.total)}</span>
               </div>
             </div>
           )}
