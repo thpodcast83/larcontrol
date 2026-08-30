@@ -1,17 +1,9 @@
 /**
  * PaginaFinancas.tsx
  * -----------------------------------------------------------------------------
- * Módulo de Saúde Financeira e Gestão de Contas do LarControl.
- *
- * Funcionalidades:
- *  1. Painel de contas fixas e variáveis (Luz, Água, Internet, Cartão, etc).
- *  2. Dashboard com gráficos de custos e alertas de orçamento.
- *  3. Assistente de economia: sugestões de corte de custos.
- *  4. Simulador de amortização de dívidas.
- *  5. Geração de relatório PDF.
+ * Módulo de Saúde Financeira, Cartões, Faturas Parceladas e Empréstimos.
  * -----------------------------------------------------------------------------
  */
-
 import { useEffect, useState, useMemo } from 'react';
 import {
   collection,
@@ -23,7 +15,7 @@ import {
 } from 'firebase/firestore';
 import { banco } from '@/firebase';
 import type { Conta, Divida } from '@/tipos';
-import { formatarMoeda, formatarDataCurta } from '@/utils/utilFormato';
+import { formatarMoeda } from '@/utils/utilFormato';
 import { gerarPdfGenerico } from '@/utils/utilPdf';
 import { Modal } from '@/componentes/Modal';
 import {
@@ -39,7 +31,6 @@ import {
   Pencil,
 } from 'lucide-react';
 
-// Lista de categorias de contas com suas cores (para o gráfico de barras).
 const categoriasConta = [
   'Luz',
   'Água',
@@ -51,7 +42,6 @@ const categoriasConta = [
   'Outros',
 ] as const;
 
-// Cores para cada categoria no gráfico de barras.
 const coresCategoria: Record<string, string> = {
   Luz: 'bg-yellow-500',
   Água: 'bg-blue-500',
@@ -63,6 +53,12 @@ const coresCategoria: Record<string, string> = {
   Outros: 'bg-slate-500',
 };
 
+function converterParaNumero(val: string): number {
+  if (!val) return 0;
+  const limpo = val.replace(/\./g, '').replace(',', '.');
+  return parseFloat(limpo) || 0;
+}
+
 export function PaginaFinancas() {
   const [contas, setContas] = useState<Conta[]>([]);
   const [dividas, setDividas] = useState<Divida[]>([]);
@@ -70,23 +66,28 @@ export function PaginaFinancas() {
   const [modalDividaAberto, setModalDividaAberto] = useState(false);
   const [editandoContaId, setEditandoContaId] = useState<string | null>(null);
 
-  // Campos do formulário de conta.
+  // Campos do formulário de conta / cartão / parcelamento
   const [descricao, setDescricao] = useState('');
-  const [categoria, setCategoria] = useState<Conta['categoria']>('Luz');
+  const [categoria, setCategoria] = useState<Conta['categoria']>('Fatura de Cartão');
   const [valor, setValor] = useState('');
   const [vencimento, setVencimento] = useState('');
   const [statusConta, setStatusConta] = useState<'Paga' | 'Pendente'>('Pendente');
   const [fixa, setFixa] = useState(false);
 
-  // Campos do simulador de dívida.
+  // Campos específicos para Cartão / Parcelamento / Empréstimo
+  const [cartaoOrigem, setCartaoOrigem] = useState('Nubank');
+  const [ehParcelado, setEhParcelado] = useState(false);
+  const [numeroParcelas, setNumeroParcelas] = useState('1');
+  const [diaFechamento, setDiaFechamento] = useState('5');
+  const [diaVencimento, setDiaVencimento] = useState('12');
+  const [taxaJurosMes, setTaxaJurosMes] = useState('15');
+
+  // Campos do simulador de dívida/empréstimo
   const [descDivida, setDescDivida] = useState('');
   const [valorDivida, setValorDivida] = useState('');
   const [jurosDivida, setJurosDivida] = useState('');
   const [parcelasDivida, setParcelasDivida] = useState('');
 
-  /**
-   * Efeito: escuta em tempo real as coleções "contas" e "dividas".
-   */
   useEffect(() => {
     const cancelarContas = onSnapshot(collection(banco, 'contas'), (snapshot) => {
       const lista: Conta[] = [];
@@ -100,6 +101,13 @@ export function PaginaFinancas() {
           vencimento: dados.vencimento || '',
           status: dados.status || 'Pendente',
           fixa: dados.fixa || false,
+          cartaoOrigem: dados.cartaoOrigem || '',
+          ehParcelado: dados.ehParcelado || false,
+          numeroParcelas: dados.numeroParcelas || 1,
+          valorParcela: dados.valorParcela || dados.valor || 0,
+          diaFechamento: dados.diaFechamento || '',
+          diaVencimento: dados.diaVencimento || '',
+          taxaJurosMes: dados.taxaJurosMes || 0,
         });
       });
       setContas(lista);
@@ -127,54 +135,98 @@ export function PaginaFinancas() {
     };
   }, []);
 
-  // --- Cálculos derivados para o dashboard ---
-
-  // Total de contas pendentes.
   const totalPendente = useMemo(
-    () => contas.filter((c) => c.status === 'Pendente').reduce((acc, c) => acc + c.valor, 0),
+    () => contas.filter((c) => c.status === 'Pendente').reduce((acc, c) => acc + (c.valorParcela || c.valor), 0),
     [contas]
   );
 
-  // Total de contas pagas.
   const totalPago = useMemo(
-    () => contas.filter((c) => c.status === 'Paga').reduce((acc, c) => acc + c.valor, 0),
+    () => contas.filter((c) => c.status === 'Paga').reduce((acc, c) => acc + (c.valorParcela || c.valor), 0),
     [contas]
   );
 
-  // Total geral.
-  const totalGeral = useMemo(() => contas.reduce((acc, c) => acc + c.valor, 0), [contas]);
+  const totalGeral = useMemo(() => contas.reduce((acc, c) => acc + (c.valorParcela || c.valor), 0), [contas]);
 
-  // Gastos por categoria (para o gráfico de barras).
+  const relatorioCartoes = useMemo(() => {
+    const mapa: Record<string, { totalFatura: number, parcelamentos: any[], vencimento: string, fechamento: string, jurosEstimado: number }> = {};
+    const hoje = new Date();
+
+    contas.forEach((c) => {
+      if (c.categoria === 'Fatura de Cartão' || c.categoria === 'Compras Online' || c.categoria === 'Empréstimo') {
+        const nomeCartao = c.cartaoOrigem || 'Geral';
+        if (!mapa[nomeCartao]) {
+          mapa[nomeCartao] = {
+            totalFatura: 0,
+            parcelamentos: [],
+            vencimento: c.diaVencimento || '10',
+            fechamento: c.diaFechamento || '03',
+            jurosEstimado: 0,
+          };
+        }
+
+        const valParcela = c.valorParcela || c.valor;
+        mapa[nomeCartao].totalFatura += valParcela;
+
+        if (c.ehParcelado && c.numeroParcelas && c.numeroParcelas > 1) {
+          mapa[nomeCartao].parcelamentos.push(c);
+        }
+
+        if (c.status === 'Pendente' && c.vencimento) {
+          const partesVenc = c.vencimento.split('/');
+          if (partesVenc.length === 3) {
+            const dataVencObj = new Date(parseInt(partesVenc[2]), parseInt(partesVenc[1]) - 1, parseInt(partesVenc[0]));
+            if (hoje > dataVencObj) {
+              const diffDias = Math.ceil((hoje.getTime() - dataVencObj.getTime()) / (1000 * 60 * 60 * 24));
+              const taxaMes = c.taxaJurosMes || 14;
+              const jurosDia = (taxaMes / 100) / 30;
+              const valorJuros = valParcela * jurosDia * diffDias;
+              mapa[nomeCartao].jurosEstimado += valorJuros;
+            }
+          }
+        }
+      }
+    });
+
+    return mapa;
+  }, [contas]);
+
   const gastosPorCategoria = useMemo(() => {
     const mapa: Record<string, number> = {};
     contas.forEach((c) => {
-      mapa[c.categoria] = (mapa[c.categoria] || 0) + c.valor;
+      const val = c.valorParcela || c.valor;
+      mapa[c.categoria] = (mapa[c.categoria] || 0) + val;
     });
     return categoriasConta
       .map((cat) => ({ categoria: cat, valor: mapa[cat] || 0 }))
       .filter((c) => c.valor > 0);
   }, [contas]);
 
-  // Maior gasto (para alertas de orçamento).
   const maiorGasto = useMemo(() => {
     if (gastosPorCategoria.length === 0) return null;
     return gastosPorCategoria.reduce((max, c) => (c.valor > max.valor ? c : max));
   }, [gastosPorCategoria]);
 
-  /**
-   * salvarConta
-   * Adiciona ou atualiza uma conta no Firestore.
-   */
   const salvarConta = async () => {
     if (!descricao.trim() || !valor) return;
+
+    const valorTotalNum = converterParaNumero(valor);
+    const numP = ehParcelado ? parseInt(numeroParcelas, 10) || 1 : 1;
+    const valorParcelaCalc = numP > 0 ? valorTotalNum / numP : valorTotalNum;
 
     const dados = {
       descricao: descricao.trim(),
       categoria,
-      valor: parseFloat(valor.replace(',', '.')) || 0,
+      valor: valorTotalNum,
       vencimento: vencimento || 'Não informado',
       status: statusConta,
       fixa,
+      cartaoOrigem,
+      ehParcelado,
+      numeroParcelas: numP,
+      valorParcela: valorParcelaCalc,
+      diaFechamento,
+      diaVencimento,
+      taxaJurosMes: converterParaNumero(taxaJurosMes),
     };
 
     if (editandoContaId) {
@@ -183,30 +235,19 @@ export function PaginaFinancas() {
       await addDoc(collection(banco, 'contas'), dados);
     }
 
-    limparFormularioConta();
-    setModalContaAberto(false);
+    fecharModalConta();
   };
 
-  /**
-   * marcarComoPaga
-   * Alterna o status de pagamento da conta.
-   */
   const marcarComoPaga = async (conta: Conta) => {
     await updateDoc(doc(banco, 'contas', conta.id), {
       status: conta.status === 'Paga' ? 'Pendente' : 'Paga',
     });
   };
 
-  /**
-   * removerConta
-   */
   const removerConta = async (id: string) => {
     await deleteDoc(doc(banco, 'contas', id));
   };
 
-  /**
-   * editarConta
-   */
   const editarConta = (conta: Conta) => {
     setEditandoContaId(conta.id);
     setDescricao(conta.descricao);
@@ -215,36 +256,46 @@ export function PaginaFinancas() {
     setVencimento(conta.vencimento);
     setStatusConta(conta.status);
     setFixa(conta.fixa);
+    setCartaoOrigem(conta.cartaoOrigem || 'Nubank');
+    setEhParcelado(conta.ehParcelado || false);
+    setNumeroParcelas(String(conta.numeroParcelas || 1));
+    setDiaFechamento(conta.diaFechamento || '5');
+    setDiaVencimento(conta.diaVencimento || '12');
+    setTaxaJurosMes(String(conta.taxaJurosMes || 14));
     setModalContaAberto(true);
   };
 
   const limparFormularioConta = () => {
     setEditandoContaId(null);
     setDescricao('');
-    setCategoria('Luz');
+    setCategoria('Fatura de Cartão');
     setValor('');
     setVencimento('');
     setStatusConta('Pendente');
     setFixa(false);
+    setCartaoOrigem('Nubank');
+    setEhParcelado(false);
+    setNumeroParcelas('1');
+    setDiaFechamento('5');
+    setDiaVencimento('12');
+    setTaxaJurosMes('14');
   };
 
-  /**
-   * calcularDivida
-   * Simula amortização de dívida usando o sistema Price (parcelas fixas).
-   * Fórmula: PMT = PV * i / (1 - (1+i)^-n)
-   * Onde: PV = valor presente, i = taxa de juros mensal, n = número de parcelas.
-   */
+  const fecharModalConta = () => {
+    limparFormularioConta();
+    setModalContaAberto(false);
+  };
+
   const calcularDivida = () => {
-    const pv = parseFloat(valorDivida.replace(',', '.')) || 0;
-    const i = (parseFloat(jurosDivida.replace(',', '.')) || 0) / 100;
-    const n = parseInt(parcelasDivida) || 0;
+    const pv = converterParaNumero(valorDivida);
+    const i = converterParaNumero(jurosDivida) / 100;
+    const n = parseInt(parcelasDivida, 10) || 0;
 
-    if (pv <= 0 || n <= 0) return;
+    if (pv <= 0 || n <= 0) return null;
 
-    // Cálculo da parcela fixa (sistema Price).
     let pmt: number;
     if (i === 0) {
-      pmt = pv / n; // Sem juros: divisão simples.
+      pmt = pv / n;
     } else {
       pmt = (pv * i) / (1 - Math.pow(1 + i, -n));
     }
@@ -259,10 +310,6 @@ export function PaginaFinancas() {
     };
   };
 
-  /**
-   * salvarDivida
-   * Salva a dívida simulada no Firestore.
-   */
   const salvarDivida = async () => {
     const calc = calcularDivida();
     if (!calc || !descDivida.trim()) return;
@@ -275,6 +322,10 @@ export function PaginaFinancas() {
       valorParcela: calc.pmt,
     });
 
+    fecharModalDivida();
+  };
+
+  const fecharModalDivida = () => {
     setDescDivida('');
     setValorDivida('');
     setJurosDivida('');
@@ -286,23 +337,20 @@ export function PaginaFinancas() {
     await deleteDoc(doc(banco, 'dividas', id));
   };
 
-  /**
-   * gerarPdf
-   * Gera relatório PDF das contas.
-   */
   const gerarPdf = () => {
-    const colunas = ['Descrição', 'Categoria', 'Vencimento', 'Status', 'Valor'];
+    const colunas = ['Descrição', 'Categoria', 'Origem', 'Vencimento', 'Status', 'Valor'];
     const linhas = contas.map((c) => [
       c.descricao,
       c.categoria,
+      c.cartaoOrigem || '-',
       c.vencimento,
       c.status,
-      formatarMoeda(c.valor),
+      formatarMoeda(c.valorParcela || c.valor),
     ]);
 
     gerarPdfGenerico(
       {
-        titulo: 'Relatório de Contas',
+        titulo: 'Relatório de Finanças e Cartões',
         colunas,
         linhas,
         total: `Total: ${formatarMoeda(totalGeral)} | Pendente: ${formatarMoeda(totalPendente)}`,
@@ -315,18 +363,55 @@ export function PaginaFinancas() {
 
   return (
     <div className="space-y-6">
-      {/* Cabeçalho */}
       <div>
         <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
           <Wallet className="text-primaria-700" />
-          Finanças
+          Finanças e Faturas de Cartão
         </h1>
         <p className="text-slate-500 text-sm mt-1">
-          Gestão de contas, dashboard financeiro e simulador de dívidas.
+          Gestão inteligente de cartões, fechamento, vencimento, parcelas e juros por atraso.
         </p>
       </div>
 
-      {/* === Dashboard de resumo === */}
+      {Object.keys(relatorioCartoes).length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Object.entries(relatorioCartoes).map(([nomeCartao, dados]) => (
+            <div key={nomeCartao} className="cartao border-l-4 border-l-teal-600 bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                  <CreditCard size={18} className="text-teal-600" /> {nomeCartao}
+                </h3>
+                <span className="badge bg-teal-50 text-teal-700 text-xs font-semibold">
+                  Fatura Atual
+                </span>
+              </div>
+              <div className="pt-2">
+                <span className="text-xs text-slate-400">Total da Fatura / Compras</span>
+                <p className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
+                  {formatarMoeda(dados.totalFatura)}
+                </p>
+              </div>
+              <div className="text-xs text-slate-500 space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex justify-between">
+                  <span>Fechamento: Dia {dados.fechamento}</span>
+                  <span>Vencimento: Dia {dados.vencimento}</span>
+                </div>
+                {dados.jurosEstimado > 0 && (
+                  <div className="flex items-center gap-1 text-red-600 font-semibold pt-1">
+                    <AlertCircle size={14} /> Juros por atraso estimado: {formatarMoeda(dados.jurosEstimado)}
+                  </div>
+                )}
+                {dados.parcelamentos.length > 0 && (
+                  <p className="text-teal-600 font-medium pt-1">
+                    Possui {dados.parcelamentos.length} compra(s) parcelada(s) ativa(s).
+                  </p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="cartao">
           <div className="flex items-center gap-2 text-slate-500 text-sm mb-1">
@@ -348,22 +433,21 @@ export function PaginaFinancas() {
         </div>
       </div>
 
-      {/* === Gráfico de barras por categoria === */}
       {gastosPorCategoria.length > 0 && (
         <div className="cartao">
-          <h2 className="font-bold text-slate-800 mb-4">Gastos por categoria</h2>
+          <h2 className="font-bold text-slate-800 dark:text-slate-100 mb-4">Gastos por categoria</h2>
           <div className="space-y-3">
             {gastosPorCategoria.map((g) => {
               const pct = totalGeral > 0 ? (g.valor / totalGeral) * 100 : 0;
               return (
                 <div key={g.categoria}>
                   <div className="flex justify-between text-sm mb-1">
-                    <span className="text-slate-600 font-medium">{g.categoria}</span>
-                    <span className="text-slate-700 font-semibold">{formatarMoeda(g.valor)}</span>
+                    <span className="text-slate-600 dark:text-slate-300 font-medium">{g.categoria}</span>
+                    <span className="text-slate-700 dark:text-slate-200 font-semibold">{formatarMoeda(g.valor)}</span>
                   </div>
-                  <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                  <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-3 overflow-hidden">
                     <div
-                      className={`h-full rounded-full transition-all duration-500 ${coresCategoria[g.categoria]}`}
+                      className={`h-full rounded-full transition-all duration-500 ${coresCategoria[g.categoria] || 'bg-teal-500'}`}
                       style={{ width: `${pct}%` }}
                     />
                   </div>
@@ -374,21 +458,6 @@ export function PaginaFinancas() {
         </div>
       )}
 
-      {/* === Alertas de orçamento === */}
-      {maiorGasto && maiorGasto.valor > totalGeral * 0.4 && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
-          <AlertCircle className="text-red-600 shrink-0 mt-0.5" size={20} />
-          <div>
-            <p className="font-semibold text-red-800 text-sm">Alerta de orçamento</p>
-            <p className="text-red-700 text-sm">
-              A categoria "{maiorGasto.categoria}" representa mais de 40% dos seus gastos.
-              Considere revisar este valor para equilibrar o orçamento.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* === Barra de ações === */}
       <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={() => {
@@ -398,11 +467,11 @@ export function PaginaFinancas() {
           className="botao-primario"
         >
           <Plus size={18} />
-          Adicionar conta
+          Adicionar conta ou fatura
         </button>
         <button onClick={() => setModalDividaAberto(true)} className="botao-secundario">
           <Calculator size={18} />
-          Simular dívida
+          Simulador empréstimo
         </button>
         <button onClick={gerarPdf} className="botao-secundario">
           <FileText size={18} />
@@ -410,34 +479,35 @@ export function PaginaFinancas() {
         </button>
       </div>
 
-      {/* === Lista de contas === */}
       <div className="space-y-3">
         {contas.length === 0 ? (
           <div className="cartao text-center py-12 text-slate-400">
             <Wallet size={40} className="mx-auto mb-3 opacity-40" />
-            <p>Nenhuma conta registrada ainda.</p>
+            <p>Nenhuma conta ou fatura registrada ainda.</p>
           </div>
         ) : (
           contas.map((c) => (
-            <div key={c.id} className="cartao flex items-center gap-3 animar-entrada">
-              <div className={`p-2 rounded-lg ${coresCategoria[c.categoria]} text-white`}>
-                <CreditCard size={18} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="font-semibold text-slate-900 truncate">{c.descricao}</h3>
-                  {c.fixa && (
-                    <span className="badge bg-slate-100 text-slate-600">Fixa</span>
-                  )}
+            <div key={c.id} className="cartao flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animar-entrada p-4">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${coresCategoria[c.categoria] || 'bg-teal-500'} text-white`}>
+                  <CreditCard size={18} />
                 </div>
-                <p className="text-sm text-slate-500 mt-0.5">
-                  {c.categoria} • Vence: {c.vencimento} • {formatarMoeda(c.valor)}
-                </p>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-semibold text-slate-900 dark:text-slate-100">{c.descricao}</h3>
+                    {c.cartaoOrigem && <span className="badge bg-teal-50 text-teal-700 text-xs">{c.cartaoOrigem}</span>}
+                    {c.ehParcelado && <span className="badge bg-purple-50 text-purple-700 text-xs">Parcelado ({c.numeroParcelas}x)</span>}
+                    {c.fixa && <span className="badge bg-slate-100 text-slate-600 text-xs">Fixa</span>}
+                  </div>
+                  <p className="text-sm text-slate-500 mt-0.5">
+                    {c.categoria} • Vence: {c.vencimento} • Parcela: <strong className="text-slate-800 dark:text-slate-200">{formatarMoeda(c.valorParcela || c.valor)}</strong>
+                  </p>
+                </div>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
                 <button
                   onClick={() => marcarComoPaga(c)}
-                  className={`badge ${
+                  className={`badge px-3 py-1.5 ${
                     c.status === 'Paga'
                       ? 'bg-green-100 text-green-700'
                       : 'bg-amber-100 text-amber-700'
@@ -448,7 +518,7 @@ export function PaginaFinancas() {
                 </button>
                 <button
                   onClick={() => editarConta(c)}
-                  className="p-2 rounded-lg text-slate-400 hover:text-primaria-700 hover:bg-primaria-50 transition-colors"
+                  className="p-2 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
                 >
                   <Pencil size={16} />
                 </button>
@@ -464,23 +534,19 @@ export function PaginaFinancas() {
         )}
       </div>
 
-      {/* === Lista de dívidas === */}
       {dividas.length > 0 && (
         <div>
-          <h2 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
+          <h2 className="font-bold text-slate-800 dark:text-slate-100 mb-3 flex items-center gap-2">
             <TrendingDown size={20} className="text-red-600" />
-            Dívidas cadastradas
+            Empréstimos e Dívidas Cadastradas
           </h2>
           <div className="space-y-3">
             {dividas.map((d) => (
               <div key={d.id} className="cartao flex items-center gap-3 animar-entrada">
                 <div className="flex-1">
-                  <h3 className="font-semibold text-slate-900">{d.descricao}</h3>
+                  <h3 className="font-semibold text-slate-900 dark:text-slate-100">{d.descricao}</h3>
                   <p className="text-sm text-slate-500 mt-0.5">
-                    {d.parcelas}x de {formatarMoeda(d.valorParcela)} • Juros: {formatarMoeda(d.jurosMensal)}%/mês
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    Total: {formatarMoeda(d.valorTotal)} • Total a pagar: {formatarMoeda(d.valorParcela * d.parcelas)}
+                    {d.parcelas}x de {formatarMoeda(d.valorParcela)} • Juros: {d.jurosMensal}%/mês
                   </p>
                 </div>
                 <button
@@ -495,160 +561,243 @@ export function PaginaFinancas() {
         </div>
       )}
 
-      {/* === Modal de conta === */}
+      {/* === Modal de conta / cartão / parcelamento com legendas ajustadas para alta visibilidade === */}
       <Modal
         aberto={modalContaAberto}
-        onFechar={() => setModalContaAberto(false)}
-        titulo={editandoContaId ? 'Editar conta' : 'Adicionar conta'}
+        onFechar={fecharModalConta}
+        titulo={editandoContaId ? 'Editar conta ou fatura' : 'Adicionar conta, cartão ou compra parcelada'}
       >
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
           <div>
-            <label className="rotulo">Descrição</label>
+            <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Descrição</label>
             <input
               type="text"
-              placeholder="Ex: Conta de luz - Agosto"
+              placeholder="Ex: Compra Shopee / Fatura Nubank / Luz"
               value={descricao}
               onChange={(e) => setDescricao(e.target.value)}
-              className="campo-entrada"
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               autoFocus
             />
           </div>
-          <div>
-            <label className="rotulo">Categoria</label>
-            <select
-              value={categoria}
-              onChange={(e) => setCategoria(e.target.value as Conta['categoria'])}
-              className="campo-entrada"
-            >
-              {categoriasConta.map((cat) => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Categoria</label>
+              <select
+                value={categoria}
+                onChange={(e) => setCategoria(e.target.value as Conta['categoria'])}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+              >
+                {categoriasConta.map((cat) => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Cartão / Origem</label>
+              <select
+                value={cartaoOrigem}
+                onChange={(e) => setCartaoOrigem(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+              >
+                <option value="Nubank">Nubank</option>
+                <option value="Shopee">Shopee</option>
+                <option value="Itaú">Itaú</option>
+                <option value="Outros">Outros</option>
+              </select>
+            </div>
           </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="rotulo">Valor (R$)</label>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Valor Total (R$)</label>
               <input
                 type="text"
                 inputMode="decimal"
-                placeholder="Ex: 150.00"
+                placeholder="Ex: 300,00"
                 value={valor}
                 onChange={(e) => setValor(e.target.value)}
-                className="campo-entrada"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
             <div>
-              <label className="rotulo">Vencimento</label>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Vencimento (dd/mm/aaaa)</label>
               <input
                 type="text"
-                placeholder="dd/mm/aaaa"
+                placeholder="Ex: 12/09/2026"
                 value={vencimento}
                 onChange={(e) => setVencimento(e.target.value)}
-                className="campo-entrada"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
           </div>
+
+          <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl space-y-3 border border-slate-200 dark:border-slate-700">
+            <label className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-slate-100 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={ehParcelado}
+                onChange={(e) => setEhParcelado(e.target.checked)}
+                className="w-4 h-4 rounded accent-teal-600"
+              />
+              Esta compra / fatura é parcelada?
+            </label>
+
+            {ehParcelado && (
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Número de Parcelas</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={numeroParcelas}
+                    onChange={(e) => setNumeroParcelas(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Valor da Parcela</label>
+                  <div className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm font-semibold flex items-center">
+                    {formatarMoeda((converterParaNumero(valor) / (parseInt(numeroParcelas, 10) || 1)))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Dia Fechamento</label>
+              <input
+                type="text"
+                value={diaFechamento}
+                onChange={(e) => setDiaFechamento(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Dia Vencimento</label>
+              <input
+                type="text"
+                value={diaVencimento}
+                onChange={(e) => setDiaVencimento(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Juros Rotativo (%/mês)</label>
+              <input
+                type="text"
+                value={taxaJurosMes}
+                onChange={(e) => setTaxaJurosMes(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+              />
+            </div>
+          </div>
+
           <div className="flex gap-2">
             <button
+              type="button"
               onClick={() => setStatusConta('Pendente')}
               className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                statusConta === 'Pendente' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-500'
+                statusConta === 'Pendente' ? 'bg-amber-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
               }`}
             >
               Pendente
             </button>
             <button
+              type="button"
               onClick={() => setStatusConta('Paga')}
               className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                statusConta === 'Paga' ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-500'
+                statusConta === 'Paga' ? 'bg-green-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
               }`}
             >
               Paga
             </button>
           </div>
-          <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+
+          <label className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-slate-100 cursor-pointer">
             <input
               type="checkbox"
               checked={fixa}
               onChange={(e) => setFixa(e.target.checked)}
-              className="w-4 h-4 rounded accent-primaria-700"
+              className="w-4 h-4 rounded accent-teal-600"
             />
             Conta fixa mensal
           </label>
+
           <button onClick={salvarConta} className="botao-primario w-full">
-            {editandoContaId ? 'Salvar alterações' : 'Adicionar conta'}
+            {editandoContaId ? 'Salvar alterações' : 'Adicionar conta / fatura'}
           </button>
         </div>
       </Modal>
 
-      {/* === Modal de simulação de dívida === */}
-      <Modal aberto={modalDividaAberto} onFechar={() => setModalDividaAberto(false)} titulo="Simulador de amortização de dívida">
+      {/* === Modal de simulador de empréstimo === */}
+      <Modal
+        aberto={modalDividaAberto}
+        onFechar={fecharModalDivida}
+        titulo="Simulador de Empréstimo / Fatura Parcelada"
+      >
         <div className="space-y-4">
           <div>
-            <label className="rotulo">Descrição da dívida</label>
+            <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Descrição do Empréstimo / Dívida</label>
             <input
               type="text"
-              placeholder="Ex: Cartão de crédito"
+              placeholder="Ex: Empréstimo Pessoal"
               value={descDivida}
               onChange={(e) => setDescDivida(e.target.value)}
-              className="campo-entrada"
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               autoFocus
             />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="rotulo">Valor (R$)</label>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Valor (R$)</label>
               <input
                 type="text"
                 inputMode="decimal"
                 placeholder="Ex: 5000"
                 value={valorDivida}
                 onChange={(e) => setValorDivida(e.target.value)}
-                className="campo-entrada"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
             <div>
-              <label className="rotulo">Juros (%/mês)</label>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Juros (%/mês)</label>
               <input
                 type="text"
                 inputMode="decimal"
                 placeholder="Ex: 3.5"
                 value={jurosDivida}
                 onChange={(e) => setJurosDivida(e.target.value)}
-                className="campo-entrada"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
             <div>
-              <label className="rotulo">Parcelas</label>
+              <label className="block text-xs font-bold text-slate-900 dark:text-slate-100 mb-1">Parcelas</label>
               <input
                 type="text"
                 inputMode="numeric"
                 placeholder="Ex: 12"
                 value={parcelasDivida}
                 onChange={(e) => setParcelasDivida(e.target.value)}
-                className="campo-entrada"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
               />
             </div>
           </div>
-          {/* Resultado da simulação */}
           {resultadoDivida && (
-            <div className="bg-primaria-50 rounded-xl p-4 space-y-2 text-sm">
+            <div className="bg-teal-50 dark:bg-slate-800 rounded-xl p-4 space-y-2 text-sm border border-teal-200 dark:border-teal-700">
               <div className="flex justify-between">
-                <span className="text-slate-600">Valor da parcela:</span>
-                <span className="font-bold text-primaria-700">{formatarMoeda(resultadoDivida.pmt)}</span>
+                <span className="text-slate-600 dark:text-slate-300">Valor da parcela:</span>
+                <span className="font-bold text-teal-700 dark:text-teal-400">{formatarMoeda(resultadoDivida.pmt)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-600">Total a pagar:</span>
-                <span className="font-bold text-slate-800">{formatarMoeda(resultadoDivida.total)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Total de juros:</span>
-                <span className="font-bold text-red-600">{formatarMoeda(resultadoDivida.jurosTotal)}</span>
+                <span className="text-slate-600 dark:text-slate-300">Total a pagar:</span>
+                <span className="font-bold text-slate-800 dark:text-slate-100">{formatarMoeda(resultadoDivida.total)}</span>
               </div>
             </div>
           )}
           <button onClick={salvarDivida} className="botao-primario w-full">
-            Salvar dívida
+            Salvar empréstimo no sistema
           </button>
         </div>
       </Modal>
