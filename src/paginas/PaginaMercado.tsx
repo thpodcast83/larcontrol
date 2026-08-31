@@ -1,5 +1,5 @@
 /**
- * PaginaMercado.tsx (Atualizado)
+ * PaginaMercado.tsx (Atualizado e Limpo)
  * -----------------------------------------------------------------------------
  * Módulo de Mercado do LarControl - Compras de Rancho e Gastos Extras.
  * -----------------------------------------------------------------------------
@@ -221,16 +221,16 @@ export function PaginaMercado() {
     return () => cancelar();
   }, []);
 
-  // 2. Carrega o catálogo geral do banco (buscando tanto em 'despensa' quanto em 'produtos')
+  // 2. Carrega o catálogo geral do banco (buscando em 'despensa' e 'produtos')
   useEffect(() => {
     async function carregarCatalogo() {
       try {
-        const lista: any[] =[cite: 2];
+        const lista: any[] = [];
         
         // Busca na despensa
-        const snapDespensa = await getDocs(collection(banco, 'despensa'));[cite: 2]
+        const snapDespensa = await getDocs(collection(banco, 'despensa'));
         snapDespensa.forEach((docSnap) => {
-          lista.push({ id: docSnap.id, ...docSnap.data() });[cite: 2]
+          lista.push({ id: docSnap.id, ...docSnap.data() });
         });
 
         // Busca opcional em produtos se houver
@@ -247,9 +247,9 @@ export function PaginaMercado() {
 
         setCatalogoGeral(lista);
       } catch (err) {
-        console.error('Erro ao carregar catálogo:', err);[cite: 2]
+        console.error('Erro ao carregar catálogo:', err);
       } finally {
-        setCarregandoCatalogo(false);[cite: 2]
+        setCarregandoCatalogo(false);
       }
     }
     carregarCatalogo();
