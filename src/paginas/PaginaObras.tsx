@@ -47,6 +47,7 @@ import {
  */
 const materiaisPreDefinidos = [
   // Estrutura, Fundações e Alvenaria
+  { nome: 'Pedra gres', tipoPadrao: 'metro' as const, precoSugerido: 130.0 },
   { nome: 'Cimento', tipoPadrao: 'unidade' as const, precoSugerido: 35.0 },
   { nome: 'Areia', tipoPadrao: 'metro' as const, precoSugerido: 120.0 },
   { nome: 'Brita', tipoPadrao: 'metro' as const, precoSugerido: 90.0 },
