@@ -5,9 +5,9 @@
  * do LarControl.
  *
  * Funcionalidades:
- *  1. Orçamento para compra de materiais (separados por unidade e por metro).
- *  2. Seleção interativa de materiais com especificação de tipo e valores personalizados.
- *  3. Comparador inteligente de fornecedores (matriz de decisão por custo-benefício).
+ *  1. Orçamento para compra de materiais com vinculação direta de fornecedores.
+ *  2. Comparação automática de custo-benefício por fornecedor (valor dos itens + frete / distância).
+ *  3. Seleção de itens por unidade ou metro.
  *  4. Geração de relatório PDF.
  * -----------------------------------------------------------------------------
  */
@@ -42,8 +42,7 @@ import {
 } from 'lucide-react';
 
 /**
- * Lista pré-definida de materiais comuns para facilitar a seleção no orçamento,
- * divididos entre unidade e metro/medida.
+ * Lista pré-definida de materiais comuns para facilitar a seleção no orçamento.
  */
 const materiaisPreDefinidos = [
   { nome: 'Tijolo', tipoPadrao: 'unidade' as const, precoSugerido: 1.5 },
@@ -67,6 +66,7 @@ export function PaginaObras() {
 
   // Campos do formulário de orçamento de materiais
   const [nomeOrcamento, setNomeOrcamento] = useState('');
+  const [fornecedorSelecionadoId, setFornecedorSelecionadoId] = useState('');
   const [itensOrcamento, setItensOrcamento] = useState<
     { nome: string; quantidade: string; tipo: 'unidade' | 'metro'; precoUnitario: string }[]
   >([]);
@@ -104,6 +104,8 @@ export function PaginaObras() {
           volume: dados.volume || 0,
           materiais: dados.materiais || [],
           valorTotal: dados.valorTotal || 0,
+          fornecedorId: dados.fornecedorId || '',
+          fornecedorNome: dados.fornecedorNome || '',
           data: dados.data?.toMillis?.() || 0,
         });
       });
@@ -174,7 +176,7 @@ export function PaginaObras() {
   };
 
   /**
-   * Salva o orçamento de materiais no Firestore.
+   * Salva o orçamento de materiais no Firestore vinculando o fornecedor selecionado.
    */
   const salvarOrcamento = async () => {
     if (!nomeOrcamento.trim() || itensOrcamento.length === 0) return;
@@ -195,9 +197,11 @@ export function PaginaObras() {
       };
     });
 
+    const fornecedorObj = fornecedores.find((f) => f.id === fornecedorSelecionadoId);
+
     await addDoc(collection(banco, 'obras'), {
       nome: nomeOrcamento.trim(),
-      tipo: 'area', // Mantido para compatibilidade do tipo Obra
+      tipo: 'area',
       largura: 0,
       altura: 0,
       profundidade: 0,
@@ -205,19 +209,20 @@ export function PaginaObras() {
       volume: 0,
       materiais: materiaisFormatados,
       valorTotal: valorTotalGeral,
+      fornecedorId: fornecedorSelecionadoId || '',
+      fornecedorNome: fornecedorObj ? fornecedorObj.nome : 'Não vinculado',
       data: serverTimestamp(),
     });
 
     setNomeOrcamento('');
+    setFornecedorSelecionadoId('');
     setItensOrcamento([]);
     setModalOrcamentoAberto(false);
   };
 
   /**
-   * salvarFornecedor
    * Salva um fornecedor no Firestore calculando custo-benefício.
    * Custo-benefício = (valorProduto + valorFrete) / distanciaKm.
-   * Quanto menor, melhor.
    */
   const salvarFornecedor = async () => {
     if (!nomeFornecedor.trim()) return;
@@ -258,8 +263,7 @@ export function PaginaObras() {
   };
 
   /**
-   * gerarPdfObra
-   * Gera relatório PDF de um orçamento específico com seus materiais.
+   * Gera relatório PDF de um orçamento específico com seus materiais e fornecedor.
    */
   const gerarPdfObra = (obra: Obra) => {
     const colunas = ['Material', 'Qtd', 'Un.', 'Preço Unit.', 'Subtotal'];
@@ -274,10 +278,10 @@ export function PaginaObras() {
     gerarPdfGenerico(
       {
         titulo: `Orçamento: ${obra.nome}`,
-        subtitulo: `Data: ${formatarData(obra.data)}`,
+        subtitulo: `Fornecedor: ${obra.fornecedorNome || 'Não vinculado'} | Data: ${formatarData(obra.data)}`,
         colunas,
         linhas,
-        total: `Valor total: ${formatarMoeda(obra.valorTotal)}`,
+        total: `Valor total dos materiais: ${formatarMoeda(obra.valorTotal)}`,
       },
       `orcamento-materiais-${obra.nome}.pdf`
     );
@@ -305,7 +309,7 @@ export function PaginaObras() {
           Orçamento de Materiais e Obras
         </h1>
         <p className="text-slate-500 text-sm mt-1">
-          Monte listas de compras por unidade ou metro e compare fornecedores.
+          Monte listas de compras por unidade ou metro, vincule fornecedores e compare opções.
         </p>
       </div>
 
@@ -365,7 +369,7 @@ export function PaginaObras() {
                   <div className="flex-1">
                     <h3 className="font-semibold text-slate-900">{obra.nome}</h3>
                     <p className="text-sm text-slate-500 mt-0.5">
-                      {obra.materiais?.length || 0} tipo(s) de material • {formatarData(obra.data)}
+                      Fornecedor: <span className="font-medium text-slate-700">{obra.fornecedorNome || 'Não vinculado'}</span> • {formatarData(obra.data)}
                     </p>
                     <p className="text-lg font-bold text-primaria-700 mt-1">
                       {formatarMoeda(obra.valorTotal)}
@@ -402,17 +406,16 @@ export function PaginaObras() {
       <div>
         <h2 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
           <Truck size={20} className="text-primaria-700" />
-          Comparador de fornecedores
+          Comparador de fornecedores (Custo-Benefício)
         </h2>
 
         {melhorFornecedor && (
           <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-3 flex items-start gap-3">
             <Award className="text-green-600 shrink-0" size={20} />
             <div>
-              <p className="font-semibold text-green-800 text-sm">Melhor custo-benefício</p>
+              <p className="font-semibold text-green-800 text-sm">Melhor fornecedor geral</p>
               <p className="text-green-700 text-sm">
-                {melhorFornecedor.nome} - {formatarMoeda(melhorFornecedor.custoTotal)} (índice:{' '}
-                {formatarNumero(melhorFornecedor.custoBeneficio, 2)})
+                {melhorFornecedor.nome} - Custo total {formatarMoeda(melhorFornecedor.custoTotal)} (com frete e distância de {formatarNumero(melhorFornecedor.distanciaKm, 0)} km)
               </p>
             </div>
           </div>
@@ -445,7 +448,7 @@ export function PaginaObras() {
                       <h3 className="font-semibold text-slate-900">{f.nome}</h3>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 text-sm">
                         <div>
-                          <p className="text-slate-400 text-xs">Produto</p>
+                          <p className="text-slate-400 text-xs">Produto base</p>
                           <p className="font-semibold text-slate-700">
                             {formatarMoeda(f.valorProduto)}
                           </p>
@@ -495,9 +498,8 @@ export function PaginaObras() {
         </div>
       </div>
 
-      {/* === Modal de Novo Orçamento de Materiais === */}
+      {/* === Modal de Novo Orçamento de Materiais com Vínculo de Fornecedor === */}
       <Modal
-        abertofechamento={modalOrcamentoAberto}
         aberto={modalOrcamentoAberto}
         onFechar={() => setModalOrcamentoAberto(false)}
         titulo="Orçamento para compra de materiais"
@@ -513,6 +515,22 @@ export function PaginaObras() {
               className="campo-entrada"
               autoFocus
             />
+          </div>
+
+          <div>
+            <label className="rotulo">Vincular Fornecedor para este Orçamento</label>
+            <select
+              value={fornecedorSelecionadoId}
+              onChange={(e) => setFornecedorSelecionadoId(e.target.value)}
+              className="campo-entrada text-sm py-2"
+            >
+              <option value="">Selecione um fornecedor (opcional)</option>
+              {fornecedores.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.nome} (Frete: {formatarMoeda(f.valorFrete)} - {formatarNumero(f.distanciaKm, 0)} km)
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="border-t border-slate-100 pt-3">
@@ -712,6 +730,10 @@ export function PaginaObras() {
       >
         {obraDetalhe && (
           <div className="space-y-4">
+            <div className="bg-primaria-50 rounded-xl p-3 text-sm">
+              <span className="text-slate-600">Fornecedor vinculado: </span>
+              <span className="font-bold text-primaria-700">{obraDetalhe.fornecedorNome || 'Não vinculado'}</span>
+            </div>
             <div>
               <h3 className="font-semibold text-slate-800 mb-2 text-sm">Lista de materiais do orçamento</h3>
               <div className="space-y-2 max-h-60 overflow-y-auto">
