@@ -1,5 +1,5 @@
 /**
- * PaginaMercado.tsx (Atualizado e Limpo)
+ * PaginaMercado.tsx (Atualizado e Otimizado para o Plano Spark)
  * -----------------------------------------------------------------------------
  * Módulo de Mercado do LarControl - Compras de Rancho e Gastos Extras.
  * -----------------------------------------------------------------------------
@@ -186,7 +186,7 @@ export function PaginaMercado() {
   const [modalAberto, setModalAberto] = useState(false);
   const [salvandoCompra, setSalvandoCompra] = useState(false);
 
-  // Catálogo unificado para busca de itens no banco
+  // Catálogo unificado para busca de itens no banco (buscando em 'despensa' e 'mercado')
   const [catalogoGeral, setCatalogoGeral] = useState<any[]>([]);
   const [carregandoCatalogo, setCarregandoCatalogo] = useState(true);
   const [termoBusca, setTermoBusca] = useState('');
@@ -221,29 +221,38 @@ export function PaginaMercado() {
     return () => cancelar();
   }, []);
 
-  // 2. Carrega o catálogo geral do banco (buscando em 'despensa' e 'produtos')
+  // 2. Carrega o catálogo geral do banco sob demanda (buscando em 'despensa' e 'mercado') para respeitar o limite Spark
   useEffect(() => {
     async function carregarCatalogo() {
       try {
         const lista: any[] = [];
-        
-        // Busca na despensa
+        const idsVistos = new Set<string>();
+
+        // Busca na coleção 'despensa'
         const snapDespensa = await getDocs(collection(banco, 'despensa'));
         snapDespensa.forEach((docSnap) => {
-          lista.push({ id: docSnap.id, ...docSnap.data() });
+          const dados = docSnap.data();
+          const nomeItem = (dados.nome || '').trim();
+          const chaveUnica = `${nomeItem.toLowerCase()}_${dados.quantidade || 1}_${dados.unidade || 'un'}_${dados.ultimoPreco || dados.precoUnitario || 0}`;
+
+          if (nomeItem && !idsVistos.has(chaveUnica)) {
+            idsVistos.add(chaveUnica);
+            lista.push({ id: docSnap.id, ...dados });
+          }
         });
 
-        // Busca opcional em produtos se houver
-        try {
-          const snapProdutos = await getDocs(collection(banco, 'produtos'));
-          snapProdutos.forEach((docSnap) => {
-            if (!lista.some((p) => p.id === docSnap.id)) {
-              lista.push({ id: docSnap.id, ...docSnap.data() });
-            }
-          });
-        } catch (e) {
-          // Coleção opcional não obrigatória
-        }
+        // Busca na coleção 'mercado'
+        const snapMercado = await getDocs(collection(banco, 'mercado'));
+        snapMercado.forEach((docSnap) => {
+          const dados = docSnap.data();
+          const nomeItem = (dados.nome || '').trim();
+          const chaveUnica = `${nomeItem.toLowerCase()}_${dados.quantidade || 1}_${dados.unidade || 'un'}_${dados.precoUnitario || dados.ultimoPreco || 0}`;
+
+          if (nomeItem && !idsVistos.has(chaveUnica)) {
+            idsVistos.add(chaveUnica);
+            lista.push({ id: docSnap.id, ...dados });
+          }
+        });
 
         setCatalogoGeral(lista);
       } catch (err) {
@@ -255,7 +264,7 @@ export function PaginaMercado() {
     carregarCatalogo();
   }, []);
 
-  // Filtro local instantâneo na memória para busca de produtos
+  // Filtro local instantâneo na memória para busca de produtos e suas variações exatas
   const resultadosBusca = useMemo(() => {
     const termo = termoBusca.trim().toLowerCase();
     if (!termo) return [];
@@ -607,7 +616,7 @@ export function PaginaMercado() {
                       {prod.quantidade || 1} {prod.unidade || 'un'} — {formatarMoeda(prod.precoUnitario || prod.ultimoPreco || 0)}
                     </p>
                   </div>
-                  <button className="text-teal-600 dark:text-teal-400 flex items-center gap-1 text-xs font-bold">
+                  <button className="text-teal-600 dark:text-teal-400 flex items-center gap-1 text-xs font-bold" type="button">
                     <PlusCircle size={16} /> Adicionar
                   </button>
                 </div>
@@ -619,7 +628,7 @@ export function PaginaMercado() {
 
       {/* Botões de Ação Principal */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <button onClick={() => setModalAberto(true)} className="botao-primario">
+        <button onClick={() => setModalAberto(true)} className="botao-primario" type="button">
           <Plus size={18} /> Adicionar Item Manual
         </button>
 
@@ -627,6 +636,7 @@ export function PaginaMercado() {
           onClick={finalizarCompra}
           disabled={salvandoCompra || itensModo.length === 0}
           className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-all flex items-center gap-2 disabled:opacity-50"
+          type="button"
         >
           <CheckCircle size={18} />
           {salvandoCompra ? 'Salvando...' : 'Finalizar e Guardar Compra'}
