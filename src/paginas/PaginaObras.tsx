@@ -1,15 +1,13 @@
 /**
  * PaginaObras.tsx
  * -----------------------------------------------------------------------------
- * Módulo de Gestão de Obras, Reformas e Cálculo de Materiais do LarControl.
+ * Módulo de Gestão de Orçamentos de Materiais e Comparador de Fornecedores
+ * do LarControl.
  *
  * Funcionalidades:
- *  1. Calculadora estrutural de metragem: área (m²) e volume (m³).
- *  2. Estimador automático de materiais (tijolos, cimento, areia, tinta, argamassa)
- *     baseado nos metros informados e valor total consolidado.
- *  3. Comparador inteligente de fornecedores (matriz de decisão):
- *     cadastro de fornecedor com valor do produto, frete e distância.
- *     Cálculo de custo-benefício: (valorProduto + frete) / distância.
+ *  1. Orçamento para compra de materiais (separados por unidade e por metro).
+ *  2. Seleção interativa de materiais com especificação de tipo e valores personalizados.
+ *  3. Comparador inteligente de fornecedores (matriz de decisão por custo-benefício).
  *  4. Geração de relatório PDF.
  * -----------------------------------------------------------------------------
  */
@@ -33,8 +31,6 @@ import {
   Plus,
   Trash2,
   FileText,
-  Ruler,
-  Box,
   Truck,
   Award,
   Phone,
@@ -46,123 +42,40 @@ import {
 } from 'lucide-react';
 
 /**
- * Tabela de consumo de materiais por m² e m³.
- * Estes são valores aproximados baseados em práticas comuns de construção civil.
+ * Lista pré-definida de materiais comuns para facilitar a seleção no orçamento,
+ * divididos entre unidade e metro/medida.
  */
-const consumoMateriais = {
-  // Por m² de parede (área):
-  tijolo: { porArea: 25, unidade: 'un', precoUnit: 1.5 }, // 25 tijolos por m²
-  cimento: { porArea: 0.5, porVolume: 5, unidade: 'saco', precoUnit: 35 }, // 0.5 saco/m² ou 5 sacos/m³
-  areia: { porArea: 0.04, porVolume: 0.5, unidade: 'm³', precoUnit: 120 }, // 0.04 m³/m² ou 0.5 m³/m³
-  tinta: { porArea: 0.1, unidade: 'L', precoUnit: 45 }, // 0.1 L por m² (1 demão)
-  argamassa: { porArea: 1.5, unidade: 'kg', precoUnit: 3 }, // 1.5 kg por m²
-};
-
-/**
- * estimarMateriais
- * Calcula os materiais necessários e seus custos com base na área ou volume.
- *
- * @param tipo - 'area' para m², 'volume' para m³.
- * @param valor - O valor em m² ou m³.
- * @returns Lista de materiais estimados com quantidades e subtotais.
- */
-function estimarMateriais(tipo: 'area' | 'volume', valor: number): MaterialEstimado[] {
-  const materiais: MaterialEstimado[] = [];
-
-  if (tipo === 'area') {
-    // Cálculo para área (m²).
-    const qtdTijolo = Math.ceil(valor * consumoMateriais.tijolo.porArea);
-    materiais.push({
-      nome: 'Tijolo',
-      quantidade: qtdTijolo,
-      unidade: 'un',
-      precoUnitario: consumoMateriais.tijolo.precoUnit,
-      subtotal: qtdTijolo * consumoMateriais.tijolo.precoUnit,
-    });
-
-    const qtdCimento = Math.ceil(valor * consumoMateriais.cimento.porArea);
-    materiais.push({
-      nome: 'Cimento',
-      quantidade: qtdCimento,
-      unidade: 'saco',
-      precoUnitario: consumoMateriais.cimento.precoUnit,
-      subtotal: qtdCimento * consumoMateriais.cimento.precoUnit,
-    });
-
-    const qtdAreia = valor * consumoMateriais.areia.porArea;
-    materiais.push({
-      nome: 'Areia',
-      quantidade: qtdAreia,
-      unidade: 'm³',
-      precoUnitario: consumoMateriais.areia.precoUnit,
-      subtotal: qtdAreia * consumoMateriais.areia.precoUnit,
-    });
-
-    const qtdTinta = valor * consumoMateriais.tinta.porArea;
-    materiais.push({
-      nome: 'Tinta',
-      quantidade: qtdTinta,
-      unidade: 'L',
-      precoUnitario: consumoMateriais.tinta.precoUnit,
-      subtotal: qtdTinta * consumoMateriais.tinta.precoUnit,
-    });
-
-    const qtdArgamassa = valor * consumoMateriais.argamassa.porArea;
-    materiais.push({
-      nome: 'Argamassa',
-      quantidade: qtdArgamassa,
-      unidade: 'kg',
-      precoUnitario: consumoMateriais.argamassa.precoUnit,
-      subtotal: qtdArgamassa * consumoMateriais.argamassa.precoUnit,
-    });
-  } else {
-    // Cálculo para volume (m³).
-    const qtdCimento = Math.ceil(valor * consumoMateriais.cimento.porVolume);
-    materiais.push({
-      nome: 'Cimento',
-      quantidade: qtdCimento,
-      unidade: 'saco',
-      precoUnitario: consumoMateriais.cimento.precoUnit,
-      subtotal: qtdCimento * consumoMateriais.cimento.precoUnit,
-    });
-
-    const qtdAreia = valor * consumoMateriais.areia.porVolume;
-    materiais.push({
-      nome: 'Areia',
-      quantidade: qtdAreia,
-      unidade: 'm³',
-      precoUnitario: consumoMateriais.areia.precoUnit,
-      subtotal: qtdAreia * consumoMateriais.areia.precoUnit,
-    });
-
-    // Para volume, também estimamos brita (1:1 com areia para concreto).
-    const qtdBrita = valor * 0.5;
-    materiais.push({
-      nome: 'Brita',
-      quantidade: qtdBrita,
-      unidade: 'm³',
-      precoUnitario: 90,
-      subtotal: qtdBrita * 90,
-    });
-  }
-
-  return materiais;
-}
+const materiaisPreDefinidos = [
+  { nome: 'Tijolo', tipoPadrao: 'unidade' as const, precoSugerido: 1.5 },
+  { nome: 'Telha', tipoPadrao: 'unidade' as const, precoSugerido: 3.0 },
+  { nome: 'Bloco de Concreto', tipoPadrao: 'unidade' as const, precoSugerido: 4.5 },
+  { nome: 'Saco de Cimento (50kg)', tipoPadrao: 'unidade' as const, precoSugerido: 35.0 },
+  { nome: 'Piso / Cerâmica', tipoPadrao: 'metro' as const, precoSugerido: 45.0 },
+  { nome: 'Areia', tipoPadrao: 'metro' as const, precoSugerido: 120.0 },
+  { nome: 'Brita', tipoPadrao: 'metro' as const, precoSugerido: 90.0 },
+  { nome: 'Tinta (Lata)', tipoPadrao: 'unidade' as const, precoSugerido: 120.0 },
+  { nome: 'Argamassa (20kg)', tipoPadrao: 'unidade' as const, precoSugerido: 25.0 },
+];
 
 export function PaginaObras() {
   const [obras, setObras] = useState<Obra[]>([]);
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
-  const [modalObraAberto, setModalObraAberto] = useState(false);
+  const [modalOrcamentoAberto, setModalOrcamentoAberto] = useState(false);
   const [modalFornecedorAberto, setModalFornecedorAberto] = useState(false);
   const [obraDetalhe, setObraDetalhe] = useState<Obra | null>(null);
   const [termoBuscaObra, setTermoBuscaObra] = useState('');
 
-  // Campos do formulário de obra.
-  const [nomeObra, setNomeObra] = useState('');
-  const [tipoObra, setTipoObra] = useState<'area' | 'volume'>('area');
-  const [largura, setLargura] = useState('');
-  const [altura, setAltura] = useState('');
-  const [profundidade, setProfundidade] = useState('');
+  // Campos do formulário de orçamento de materiais
+  const [nomeOrcamento, setNomeOrcamento] = useState('');
+  const [itensOrcamento, setItensOrcamento] = useState<
+    { nome: string; quantidade: string; tipo: 'unidade' | 'metro'; precoUnitario: string }[]
+  >([]);
+
+  // Estado temporário para adicionar item na lista do orçamento
+  const [materialSelecionado, setMaterialSelecionado] = useState(materiaisPreDefinidos[0].nome);
+  const [qtdItem, setQtdItem] = useState('');
+  const [tipoItem, setTipoItem] = useState<'unidade' | 'metro'>('unidade');
+  const [precoItem, setPrecoItem] = useState(materiaisPreDefinidos[0].precoSugerido.toString());
 
   // Campos do formulário de fornecedor.
   const [nomeFornecedor, setNomeFornecedor] = useState('');
@@ -173,7 +86,7 @@ export function PaginaObras() {
   const [distanciaKm, setDistanciaKm] = useState('');
 
   /**
-   * Efeito: escuta em tempo real as coleções "obras" e "fornecedores".
+   * Efeito: escuta em tempo real as coleções "obras" (orçamentos) e "fornecedores".
    */
   useEffect(() => {
     const cancelarObras = onSnapshot(collection(banco, 'obras'), (snapshot) => {
@@ -222,55 +135,82 @@ export function PaginaObras() {
     };
   }, []);
 
-  // --- Cálculo em tempo real do formulário de obra ---
-  const larg = parseFloat(largura.replace(',', '.')) || 0;
-  const alt = parseFloat(altura.replace(',', '.')) || 0;
-  const prof = parseFloat(profundidade.replace(',', '.')) || 0;
-
-  // Calcula área (m²) ou volume (m³) conforme o tipo.
-  const areaCalc = larg * alt;
-  const volumeCalc = larg * alt * prof;
-
-  // Estima materiais em tempo real para preview.
-  const materiaisPreview =
-    tipoObra === 'area' && areaCalc > 0
-      ? estimarMateriais('area', areaCalc)
-      : tipoObra === 'volume' && volumeCalc > 0
-      ? estimarMateriais('volume', volumeCalc)
-      : [];
-
-  const valorTotalPreview = materiaisPreview.reduce((acc, m) => acc + m.subtotal, 0);
+  /**
+   * Atualiza os campos padrão ao trocar o material pré-selecionado
+   */
+  const handleTrocarMaterialPreDefinido = (nomeMat: string) => {
+    setMaterialSelecionado(nomeMat);
+    const encontrado = materiaisPreDefinidos.find((m) => m.nome === nomeMat);
+    if (encontrado) {
+      setTipoItem(encontrado.tipoPadrao);
+      setPrecoItem(encontrado.precoSugerido.toString());
+    }
+  };
 
   /**
-   * salvarObra
-   * Salva a obra calculada no Firestore.
+   * Adiciona um item à lista temporária do orçamento atual
    */
-  const salvarObra = async () => {
-    if (!nomeObra.trim()) return;
+  const adicionarItemAoOrcamento = () => {
+    const qtd = parseFloat(qtdItem.replace(',', '.')) || 0;
+    const preco = parseFloat(precoItem.replace(',', '.')) || 0;
+    if (qtd <= 0) return;
 
-    const area = tipoObra === 'area' ? areaCalc : 0;
-    const volume = tipoObra === 'volume' ? volumeCalc : 0;
-    const materiais = estimarMateriais(tipoObra, tipoObra === 'area' ? area : volume);
-    const valorTotal = materiais.reduce((acc, m) => acc + m.subtotal, 0);
+    setItensOrcamento([
+      ...itensOrcamento,
+      {
+        nome: materialSelecionado,
+        quantidade: qtdItem,
+        tipo: tipoItem,
+        precoUnitario: precoItem,
+      },
+    ]);
+    setQtdItem('');
+  };
+
+  const removerItemDoOrcamento = (index: number) => {
+    const novaLista = [...itensOrcamento];
+    novaLista.splice(index, 1);
+    setItensOrcamento(novaLista);
+  };
+
+  /**
+   * Salva o orçamento de materiais no Firestore.
+   */
+  const salvarOrcamento = async () => {
+    if (!nomeOrcamento.trim() || itensOrcamento.length === 0) return;
+
+    let valorTotalGeral = 0;
+    const materiaisFormatados: MaterialEstimado[] = itensOrcamento.map((item) => {
+      const q = parseFloat(item.quantidade.replace(',', '.')) || 0;
+      const p = parseFloat(item.precoUnitario.replace(',', '.')) || 0;
+      const sub = q * p;
+      valorTotalGeral += sub;
+
+      return {
+        nome: item.nome,
+        quantidade: q,
+        unidade: item.tipo === 'unidade' ? 'un' : 'm',
+        precoUnitario: p,
+        subtotal: sub,
+      };
+    });
 
     await addDoc(collection(banco, 'obras'), {
-      nome: nomeObra.trim(),
-      tipo: tipoObra,
-      largura: larg,
-      altura: alt,
-      profundidade: prof,
-      area,
-      volume,
-      materiais,
-      valorTotal,
+      nome: nomeOrcamento.trim(),
+      tipo: 'area', // Mantido para compatibilidade do tipo Obra
+      largura: 0,
+      altura: 0,
+      profundidade: 0,
+      area: 0,
+      volume: 0,
+      materiais: materiaisFormatados,
+      valorTotal: valorTotalGeral,
       data: serverTimestamp(),
     });
 
-    setNomeObra('');
-    setLargura('');
-    setAltura('');
-    setProfundidade('');
-    setModalObraAberto(false);
+    setNomeOrcamento('');
+    setItensOrcamento([]);
+    setModalOrcamentoAberto(false);
   };
 
   /**
@@ -319,7 +259,7 @@ export function PaginaObras() {
 
   /**
    * gerarPdfObra
-   * Gera relatório PDF de uma obra específica com seus materiais.
+   * Gera relatório PDF de um orçamento específico com seus materiais.
    */
   const gerarPdfObra = (obra: Obra) => {
     const colunas = ['Material', 'Qtd', 'Un.', 'Preço Unit.', 'Subtotal'];
@@ -333,27 +273,28 @@ export function PaginaObras() {
 
     gerarPdfGenerico(
       {
-        titulo: `Obra: ${obra.nome}`,
-        subtitulo: `${obra.tipo === 'area' ? `${formatarNumero(obra.area, 2)} m²` : `${formatarNumero(obra.volume, 2)} m³`} • ${formatarData(obra.data)}`,
+        titulo: `Orçamento: ${obra.nome}`,
+        subtitulo: `Data: ${formatarData(obra.data)}`,
         colunas,
         linhas,
         total: `Valor total: ${formatarMoeda(obra.valorTotal)}`,
       },
-      `relatorio-obra-${obra.nome}.pdf`
+      `orcamento-materiais-${obra.nome}.pdf`
     );
   };
 
-  // Filtragem de obras por termo de busca
+  // Filtragem de orçamentos por termo de busca
   const obrasFiltradas = obras.filter((obra) =>
     obra.nome.toLowerCase().includes(termoBuscaObra.toLowerCase())
   );
 
   // Encontra o fornecedor com melhor custo-benefício (menor valor).
-  const melhorFornecedor = fornecedores.length > 0
-    ? fornecedores.reduce((melhor, f) =>
-        f.custoBeneficio < melhor.custoBeneficio ? f : melhor
-      )
-    : null;
+  const melhorFornecedor =
+    fornecedores.length > 0
+      ? fornecedores.reduce((melhor, f) =>
+          f.custoBeneficio < melhor.custoBeneficio ? f : melhor
+        )
+      : null;
 
   return (
     <div className="space-y-6">
@@ -361,18 +302,18 @@ export function PaginaObras() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
           <Hammer className="text-primaria-700" />
-          Obras e Reformas
+          Orçamento de Materiais e Obras
         </h1>
         <p className="text-slate-500 text-sm mt-1">
-          Cálculo de materiais e comparação de fornecedores.
+          Monte listas de compras por unidade ou metro e compare fornecedores.
         </p>
       </div>
 
       {/* === Barra de ações === */}
       <div className="flex flex-wrap items-center gap-3">
-        <button onClick={() => setModalObraAberto(true)} className="botao-primario">
+        <button onClick={() => setModalOrcamentoAberto(true)} className="botao-primario">
           <Plus size={18} />
-          Nova obra
+          Novo orçamento de materiais
         </button>
         <button onClick={() => setModalFornecedorAberto(true)} className="botao-secundario">
           <Truck size={18} />
@@ -380,18 +321,18 @@ export function PaginaObras() {
         </button>
       </div>
 
-      {/* === Lista de obras === */}
+      {/* === Lista de orçamentos salvos === */}
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <h2 className="font-bold text-slate-800 flex items-center gap-2">
-            <Ruler size={20} className="text-primaria-700" />
-            Obras cadastradas
+            <Package size={20} className="text-primaria-700" />
+            Orçamentos salvos
           </h2>
           <div className="relative w-full sm:w-64">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Buscar obra..."
+              placeholder="Buscar orçamento..."
               value={termoBuscaObra}
               onChange={(e) => setTermoBuscaObra(e.target.value)}
               className="w-full pl-9 pr-8 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primaria-500 text-sm shadow-sm"
@@ -411,7 +352,11 @@ export function PaginaObras() {
           {obrasFiltradas.length === 0 ? (
             <div className="cartao text-center py-12 text-slate-400">
               <Hammer size={40} className="mx-auto mb-3 opacity-40" />
-              <p>{obras.length === 0 ? 'Nenhuma obra cadastrada ainda.' : 'Nenhuma obra encontrada para a busca.'}</p>
+              <p>
+                {obras.length === 0
+                  ? 'Nenhum orçamento cadastrado ainda.'
+                  : 'Nenhum orçamento encontrado para a busca.'}
+              </p>
             </div>
           ) : (
             obrasFiltradas.map((obra) => (
@@ -420,17 +365,7 @@ export function PaginaObras() {
                   <div className="flex-1">
                     <h3 className="font-semibold text-slate-900">{obra.nome}</h3>
                     <p className="text-sm text-slate-500 mt-0.5">
-                      {obra.tipo === 'area' ? (
-                        <span className="flex items-center gap-1">
-                          <Ruler size={14} /> {formatarNumero(obra.area, 2)} m²
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1">
-                          <Box size={14} /> {formatarNumero(obra.volume, 2)} m³
-                        </span>
-                      )}
-                      {' • '}
-                      {formatarData(obra.data)}
+                      {obra.materiais?.length || 0} tipo(s) de material • {formatarData(obra.data)}
                     </p>
                     <p className="text-lg font-bold text-primaria-700 mt-1">
                       {formatarMoeda(obra.valorTotal)}
@@ -476,7 +411,8 @@ export function PaginaObras() {
             <div>
               <p className="font-semibold text-green-800 text-sm">Melhor custo-benefício</p>
               <p className="text-green-700 text-sm">
-                {melhorFornecedor.nome} - {formatarMoeda(melhorFornecedor.custoTotal)} (índice: {formatarNumero(melhorFornecedor.custoBeneficio, 2)})
+                {melhorFornecedor.nome} - {formatarMoeda(melhorFornecedor.custoTotal)} (índice:{' '}
+                {formatarNumero(melhorFornecedor.custoBeneficio, 2)})
               </p>
             </div>
           </div>
@@ -510,24 +446,36 @@ export function PaginaObras() {
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 text-sm">
                         <div>
                           <p className="text-slate-400 text-xs">Produto</p>
-                          <p className="font-semibold text-slate-700">{formatarMoeda(f.valorProduto)}</p>
+                          <p className="font-semibold text-slate-700">
+                            {formatarMoeda(f.valorProduto)}
+                          </p>
                         </div>
                         <div>
                           <p className="text-slate-400 text-xs">Frete</p>
-                          <p className="font-semibold text-slate-700">{formatarMoeda(f.valorFrete)}</p>
+                          <p className="font-semibold text-slate-700">
+                            {formatarMoeda(f.valorFrete)}
+                          </p>
                         </div>
                         <div>
                           <p className="text-slate-400 text-xs">Distância</p>
-                          <p className="font-semibold text-slate-700">{formatarNumero(f.distanciaKm, 0)} km</p>
+                          <p className="font-semibold text-slate-700">
+                            {formatarNumero(f.distanciaKm, 0)} km
+                          </p>
                         </div>
                         <div>
                           <p className="text-slate-400 text-xs">Custo total</p>
-                          <p className="font-semibold text-slate-700">{formatarMoeda(f.custoTotal)}</p>
+                          <p className="font-semibold text-slate-700">
+                            {formatarMoeda(f.custoTotal)}
+                          </p>
                         </div>
                       </div>
                       <div className="mt-2 flex items-center gap-3 text-xs text-slate-400">
-                        <span className="flex items-center gap-1"><Phone size={12} /> {f.telefone}</span>
-                        <span className="flex items-center gap-1"><MapPin size={12} /> {f.endereco}</span>
+                        <span className="flex items-center gap-1">
+                          <Phone size={12} /> {f.telefone}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <MapPin size={12} /> {f.endereco}
+                        </span>
                       </div>
                       <div className="mt-1.5 inline-flex items-center gap-1 bg-primaria-50 text-primaria-700 px-2.5 py-1 rounded-full text-xs font-semibold">
                         <Calculator size={14} />
@@ -547,116 +495,140 @@ export function PaginaObras() {
         </div>
       </div>
 
-      {/* === Modal de nova obra === */}
-      <Modal aberto={modalObraAberto} onFechar={() => setModalObraAberto(false)} titulo="Nova obra / reforma">
+      {/* === Modal de Novo Orçamento de Materiais === */}
+      <Modal
+        abertofechamento={modalOrcamentoAberto}
+        aberto={modalOrcamentoAberto}
+        onFechar={() => setModalOrcamentoAberto(false)}
+        titulo="Orçamento para compra de materiais"
+      >
         <div className="space-y-4">
           <div>
-            <label className="rotulo">Nome da obra</label>
+            <label className="rotulo">Nome do Orçamento / Cômodo</label>
             <input
               type="text"
-              placeholder="Ex: Piso da sala"
-              value={nomeObra}
-              onChange={(e) => setNomeObra(e.target.value)}
+              placeholder="Ex: Reforma da Cozinha"
+              value={nomeOrcamento}
+              onChange={(e) => setNomeOrcamento(e.target.value)}
               className="campo-entrada"
               autoFocus
             />
           </div>
-          <div>
-            <label className="rotulo">Tipo de cálculo</label>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setTipoObra('area')}
-                className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                  tipoObra === 'area' ? 'bg-primaria-700 text-white' : 'bg-slate-100 text-slate-500'
-                }`}
-              >
-                <Ruler size={16} className="inline mr-1" /> Área (m²)
-              </button>
-              <button
-                onClick={() => setTipoObra('volume')}
-                className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                  tipoObra === 'volume' ? 'bg-primaria-700 text-white' : 'bg-slate-100 text-slate-500'
-                }`}
-              >
-                <Box size={16} className="inline mr-1" /> Volume (m³)
-              </button>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="rotulo">Largura (m)</label>
-              <input
-                type="text"
-                inputMode="decimal"
-                placeholder="Ex: 4.5"
-                value={largura}
-                onChange={(e) => setLargura(e.target.value)}
-                className="campo-entrada"
-              />
-            </div>
-            <div>
-              <label className="rotulo">Altura (m)</label>
-              <input
-                type="text"
-                inputMode="decimal"
-                placeholder="Ex: 2.8"
-                value={altura}
-                onChange={(e) => setAltura(e.target.value)}
-                className="campo-entrada"
-              />
-            </div>
-          </div>
-          {tipoObra === 'volume' && (
-            <div>
-              <label className="rotulo">Profundidade (m)</label>
-              <input
-                type="text"
-                inputMode="decimal"
-                placeholder="Ex: 0.2"
-                value={profundidade}
-                onChange={(e) => setProfundidade(e.target.value)}
-                className="campo-entrada"
-              />
-            </div>
-          )}
-          {/* Preview do cálculo em tempo real */}
-          {(areaCalc > 0 || volumeCalc > 0) && (
-            <div className="bg-primaria-50 rounded-xl p-4 space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-600">
-                  {tipoObra === 'area' ? 'Área calculada:' : 'Volume calculado:'}
-                </span>
-                <span className="font-bold text-primaria-700">
-                  {tipoObra === 'area' ? `${formatarNumero(areaCalc, 2)} m²` : `${formatarNumero(volumeCalc, 2)} m³`}
-                </span>
-              </div>
-              {materiaisPreview.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="text-xs font-semibold text-slate-600">Materiais estimados:</p>
-                  {materiaisPreview.map((m) => (
-                    <div key={m.nome} className="flex justify-between text-xs">
-                      <span className="text-slate-600">
-                        {m.nome}: {formatarNumero(m.quantidade, 0)} {m.unidade}
-                      </span>
-                      <span className="font-semibold text-slate-700">{formatarMoeda(m.subtotal)}</span>
-                    </div>
+
+          <div className="border-t border-slate-100 pt-3">
+            <h3 className="font-semibold text-slate-800 text-sm mb-2">Adicionar materiais à lista</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+              <div>
+                <label className="rotulo text-xs">Material</label>
+                <select
+                  value={materialSelecionado}
+                  onChange={(e) => handleTrocarMaterialPreDefinido(e.target.value)}
+                  className="campo-entrada text-sm py-2"
+                >
+                  {materiaisPreDefinidos.map((mat) => (
+                    <option key={mat.nome} value={mat.nome}>
+                      {mat.nome}
+                    </option>
                   ))}
-                  <div className="flex justify-between text-sm pt-2 border-t border-primaria-200">
-                    <span className="font-semibold text-slate-700">Valor total:</span>
-                    <span className="font-bold text-primaria-700">{formatarMoeda(valorTotalPreview)}</span>
+                </select>
+              </div>
+              <div>
+                <label className="rotulo text-xs">Tipo de Medida</label>
+                <select
+                  value={tipoItem}
+                  onChange={(e) => setTipoItem(e.target.value as 'unidade' | 'metro')}
+                  className="campo-entrada text-sm py-2"
+                >
+                  <option value="unidade">Por Unidade (un)</option>
+                  <option value="metro">Por Metro (m / m² / m³)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <div>
+                <label className="rotulo text-xs">Quantidade</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="Ex: 100"
+                  value={qtdItem}
+                  onChange={(e) => setQtdItem(e.target.value)}
+                  className="campo-entrada text-sm py-2"
+                />
+              </div>
+              <div>
+                <label className="rotulo text-xs">Preço Unitário (R$)</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="Ex: 1.50"
+                  value={precoItem}
+                  onChange={(e) => setPrecoItem(e.target.value)}
+                  className="campo-entrada text-sm py-2"
+                />
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={adicionarItemAoOrcamento}
+              className="botao-secundario w-full text-sm py-2"
+            >
+              <Plus size={16} /> Incluir item na lista
+            </button>
+          </div>
+
+          {/* Listagem temporária dos itens adicionados */}
+          {itensOrcamento.length > 0 && (
+            <div className="bg-slate-50 rounded-xl p-3 space-y-2 max-h-48 overflow-y-auto">
+              <p className="text-xs font-semibold text-slate-600">Itens adicionados:</p>
+              {itensOrcamento.map((item, index) => {
+                const q = parseFloat(item.quantidade.replace(',', '.')) || 0;
+                const p = parseFloat(item.precoUnitario.replace(',', '.')) || 0;
+                const sub = q * p;
+                return (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-200 text-xs"
+                  >
+                    <div>
+                      <span className="font-semibold text-slate-800">{item.nome}</span>
+                      <span className="text-slate-500 ml-1">
+                        ({q} {item.tipo === 'unidade' ? 'un' : 'm'} × {formatarMoeda(p)})
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-primaria-700">{formatarMoeda(sub)}</span>
+                      <button
+                        onClick={() => removerItemDoOrcamento(index)}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })}
             </div>
           )}
-          <button onClick={salvarObra} className="botao-primario w-full">
-            Salvar obra
+
+          <button
+            onClick={salvarOrcamento}
+            disabled={itensOrcamento.length === 0}
+            className="botao-primario w-full disabled:opacity-50"
+          >
+            Salvar orçamento completo
           </button>
         </div>
       </Modal>
 
-      {/* === Modal de fornecedor === */}
-      <Modal aberto={modalFornecedorAberto} onFechar={() => setModalFornecedorAberto(false)} titulo="Cadastrar fornecedor">
+      {/* === Modal de cadastro de fornecedor === */}
+      <Modal
+        aberto={modalFornecedorAberto}
+        onFechar={() => setModalFornecedorAberto(false)}
+        titulo="Cadastrar fornecedor"
+      >
         <div className="space-y-4">
           <div>
             <label className="rotulo">Nome do fornecedor</label>
@@ -732,36 +704,24 @@ export function PaginaObras() {
         </div>
       </Modal>
 
-      {/* === Modal de detalhes da obra === */}
-      <Modal aberto={!!obraDetalhe} onFechar={() => setObraDetalhe(null)} titulo={obraDetalhe?.nome || ''}>
+      {/* === Modal de detalhes do orçamento === */}
+      <Modal
+        aberto={!!obraDetalhe}
+        onFechar={() => setObraDetalhe(null)}
+        titulo={obraDetalhe?.nome || ''}
+      >
         {obraDetalhe && (
           <div className="space-y-4">
-            <div className="bg-primaria-50 rounded-xl p-4">
-              <div className="flex justify-between text-sm mb-2">
-                <span className="text-slate-600">Dimensões:</span>
-                <span className="font-bold text-primaria-700">
-                  {obraDetalhe.largura}m × {obraDetalhe.altura}m
-                  {obraDetalhe.tipo === 'volume' && ` × ${obraDetalhe.profundidade}m`}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-600">
-                  {obraDetalhe.tipo === 'area' ? 'Área:' : 'Volume:'}
-                </span>
-                <span className="font-bold text-primaria-700">
-                  {obraDetalhe.tipo === 'area'
-                    ? `${formatarNumero(obraDetalhe.area, 2)} m²`
-                    : `${formatarNumero(obraDetalhe.volume, 2)} m³`}
-                </span>
-              </div>
-            </div>
             <div>
-              <h3 className="font-semibold text-slate-800 mb-2">Materiais estimados</h3>
-              <div className="space-y-2">
-                {obraDetalhe.materiais.map((m) => (
-                  <div key={m.nome} className="flex justify-between items-center py-2 border-b border-slate-100">
+              <h3 className="font-semibold text-slate-800 mb-2 text-sm">Lista de materiais do orçamento</h3>
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {obraDetalhe.materiais.map((m, index) => (
+                  <div
+                    key={index}
+                    className="flex justify-between items-center py-2 border-b border-slate-100 text-sm"
+                  >
                     <div>
-                      <p className="font-medium text-slate-700 text-sm">{m.nome}</p>
+                      <p className="font-medium text-slate-700">{m.nome}</p>
                       <p className="text-xs text-slate-400">
                         {formatarNumero(m.quantidade, 0)} {m.unidade} × {formatarMoeda(m.precoUnitario)}
                       </p>
@@ -771,16 +731,15 @@ export function PaginaObras() {
                 ))}
               </div>
             </div>
-            <div className="flex justify-between items-center pt-2">
-              <span className="font-bold text-slate-800">Valor total</span>
-              <span className="text-xl font-bold text-primaria-700">{formatarMoeda(obraDetalhe.valorTotal)}</span>
+            <div className="flex justify-between items-center pt-2 border-t border-slate-200">
+              <span className="font-bold text-slate-800">Valor total geral</span>
+              <span className="text-xl font-bold text-primaria-700">
+                {formatarMoeda(obraDetalhe.valorTotal)}
+              </span>
             </div>
-            <button
-              onClick={() => gerarPdfObra(obraDetalhe)}
-              className="botao-primario w-full"
-            >
+            <button onClick={() => gerarPdfObra(obraDetalhe)} className="botao-primario w-full">
               <FileText size={18} />
-              Exportar PDF desta obra
+              Exportar PDF deste orçamento
             </button>
           </div>
         )}
