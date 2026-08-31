@@ -4,11 +4,12 @@
  * Módulo de Controle de Despensa e Estoque do LarControl.
  *
  * Funcionalidades:
- *  1. Registro de itens em categorias: Geladeira, Armários, Produtos de Limpeza.
- *  2. Controle de quantidade restante e status (Fechado / Aberto).
- *  3. Histórico do valor pago e local da última compra.
- *  4. Geração de relatório PDF.
- *  5. Importação em massa de listas.
+ *  1. Registro de itens em categorias: Geladeira, Armários, Produtos de Limpeza, Higiene Pessoal.
+ *  2. Envio otimizado de itens da despensa/mercado diretamente para a lista de compras (carrinho) sem estourar o limite Spark.
+ *  3. Controle de quantidade restante e status (Fechado / Aberto).
+ *  4. Histórico do valor pago e local da última compra.
+ *  5. Geração de relatório PDF.
+ *  6. Importação em massa de listas.
  * -----------------------------------------------------------------------------
  */
 
@@ -37,9 +38,11 @@ import {
   Refrigerator,
   Archive,
   SprayCan,
+  Sparkles,
   Lock,
   Unlock,
   Pencil,
+  ShoppingCart,
 } from 'lucide-react';
 
 // Mapeamento de categoria para ícone correspondente.
@@ -47,6 +50,7 @@ const iconeCategoria: Record<string, React.ReactNode> = {
   Geladeira: <Refrigerator size={18} />,
   Armários: <Archive size={18} />,
   'Produtos de Limpeza': <SprayCan size={18} />,
+  'Higiene Pessoal': <Sparkles size={18} />,
 };
 
 // Cores para cada categoria (badge).
@@ -54,6 +58,7 @@ const corCategoria: Record<string, string> = {
   Geladeira: 'bg-blue-100 text-blue-700',
   Armários: 'bg-amber-100 text-amber-700',
   'Produtos de Limpeza': 'bg-purple-100 text-purple-700',
+  'Higiene Pessoal': 'bg-rose-100 text-rose-700',
 };
 
 export function PaginaDespensa() {
@@ -197,6 +202,39 @@ export function PaginaDespensa() {
   };
 
   /**
+   * enviarParaCarrinho
+   * Envia o item diretamente para a lista de compras (carrinho_atual) usando
+   * uma escrita sob demanda, mantendo a compatibilidade e evitando leitura
+   * desnecessária que pudesse estourar o plano Spark.
+   */
+  const enviarParaCarrinho = async (item: ItemDespensa) => {
+    try {
+      const preco = item.ultimoPreco || 0;
+      const qtd = item.quantidade || 1;
+      let subtotal = qtd * preco;
+      if (item.unidade === 'g') {
+        subtotal = (qtd / 1000) * preco;
+      }
+
+      await addDoc(collection(banco, 'carrinho_atual'), {
+        nome: item.nome,
+        quantidade: qtd,
+        unidade: item.unidade || 'un',
+        precoUnitario: preco,
+        subtotal,
+        modo: 'rancho',
+        mercado: item.ultimoLocal || 'Não informado',
+        adicionadoPor: 'Reposição Despensa',
+        adicionadoEm: serverTimestamp(),
+      });
+
+      alert(`"${item.nome}" foi enviado para a lista de compras (Carrinho)!`);
+    } catch (erro) {
+      console.error('Erro ao enviar item para o carrinho:', erro);
+    }
+  };
+
+  /**
    * importarItens
    * Importa itens em massa para a despensa.
    */
@@ -246,7 +284,7 @@ export function PaginaDespensa() {
       ? itens
       : itens.filter((i) => i.categoria === filtroCategoria);
 
-  const categorias = ['Todas', 'Geladeira', 'Armários', 'Produtos de Limpeza'];
+  const categorias = ['Todas', 'Geladeira', 'Armários', 'Produtos de Limpeza', 'Higiene Pessoal'];
 
   return (
     <div className="space-y-6">
@@ -254,10 +292,10 @@ export function PaginaDespensa() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
           <Package className="text-primaria-700" />
-          Despensa
+          Despensa e Higiene
         </h1>
         <p className="text-slate-500 text-sm mt-1">
-          Controle de estoque doméstico por categoria e status.
+          Controle de estoque doméstico, categorias e reposição para lista de compras.
         </p>
       </div>
 
@@ -309,13 +347,13 @@ export function PaginaDespensa() {
         ) : (
           itensFiltrados.map((item) => (
             <div key={item.id} className="cartao flex items-center gap-3 animar-entrada">
-              <div className={`p-2 rounded-lg ${corCategoria[item.categoria]}`}>
-                {iconeCategoria[item.categoria]}
+              <div className={`p-2 rounded-lg ${corCategoria[item.categoria] || 'bg-slate-100 text-slate-700'}`}>
+                {iconeCategoria[item.categoria] || <Package size={18} />}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="font-semibold text-slate-900 truncate">{item.nome}</h3>
-                  <span className={`badge ${corCategoria[item.categoria]}`}>{item.categoria}</span>
+                  <span className={`badge ${corCategoria[item.categoria] || 'bg-slate-100 text-slate-700'}`}>{item.categoria}</span>
                 </div>
                 <p className="text-sm text-slate-500 mt-0.5">
                   {item.quantidade} {item.unidade} • {item.status === 'Aberto' ? 'Aberto' : 'Fechado'}
@@ -325,6 +363,16 @@ export function PaginaDespensa() {
                 </p>
               </div>
               <div className="flex items-center gap-1">
+                {/* Botão para enviar para a Lista de Compras (Carrinho) */}
+                <button
+                  type="button"
+                  onClick={() => enviarParaCarrinho(item)}
+                  className="p-2 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
+                  title="Adicionar à Lista de Compras"
+                  aria-label="Adicionar à Lista de Compras"
+                >
+                  <ShoppingCart size={18} />
+                </button>
                 {/* Botão de alternar status */}
                 <button
                   type="button"
@@ -373,7 +421,7 @@ export function PaginaDespensa() {
             <label className="rotulo">Nome do item</label>
             <input
               type="text"
-              placeholder="Ex: Leite integral"
+              placeholder="Ex: Leite integral ou Papel Higiênico"
               value={nome}
               onChange={(e) => setNome(e.target.value)}
               className="campo-entrada"
@@ -391,6 +439,7 @@ export function PaginaDespensa() {
               <option value="Geladeira">Geladeira</option>
               <option value="Armários">Armários</option>
               <option value="Produtos de Limpeza">Produtos de Limpeza</option>
+              <option value="Higiene Pessoal">Higiene Pessoal</option>
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
