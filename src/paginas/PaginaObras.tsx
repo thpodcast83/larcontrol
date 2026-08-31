@@ -1,7 +1,5 @@
 /**
- * PaginaObras.tsx (Completa e Atualizada)
- * -----------------------------------------------------------------------------
- * Módulo de Gestão de Orçamentos com Dashboard no Topo e Listagem Completa.
+ * PaginaObras.tsx (Completa, Funcional e com Botão de Edição)
  * -----------------------------------------------------------------------------
  */
 
@@ -14,11 +12,11 @@ import {
   deleteDoc,
   doc,
   serverTimestamp,
+  getDocs,
 } from 'firebase/firestore';
 import { banco } from '@/firebase';
 import type { Obra, Fornecedor, MaterialEstimado } from '@/tipos';
 import { formatarMoeda, formatarData, formatarNumero } from '@/utils/utilFormato';
-import { gerarPdfGenerico } from '@/utils/utilPdf';
 import { Modal } from '@/componentes/Modal';
 import {
   Hammer,
@@ -31,11 +29,9 @@ import {
   Phone,
   MapPin,
   Search,
-  X,
-  Package,
   DollarSign,
   Navigation,
-  CheckCircle2,
+  X,
 } from 'lucide-react';
 
 export function PaginaObras() {
@@ -46,16 +42,17 @@ export function PaginaObras() {
   const [modalOrcamentoAberto, setModalOrcamentoAberto] = useState(false);
   const [modalFornecedorAberto, setModalFornecedorAberto] = useState(false);
   const [obraDetalhe, setObraDetalhe] = useState<Obra | null>(null);
+  const [obraEmEdicao, setObraEmEdicao] = useState<Obra | null>(null);
   
-  // Filtros e Formulários
+  // Filtros e Formulários de Orçamento
   const [termoBuscaObra, setTermoBuscaObra] = useState('');
   const [nomeObra, setNomeObra] = useState('');
   const [tipoObra, setTipoObra] = useState<'area' | 'volume'>('area');
   const [largura, setLargura] = useState('');
   const [altura, setAltura] = useState('');
   const [profundidade, setProfundidade] = useState('');
-  const [materiaisEstimados, setMateriaisEstimados] = useState<MaterialEstimado[]>([]);
   const [fornecedorSelecionadoId, setFornecedorSelecionadoId] = useState('');
+  const [valorTotalOrcamento, setValorTotalOrcamento] = useState('');
 
   // Estados para Cadastro de Fornecedor
   const [nomeForn, setNomeForn] = useState('');
@@ -83,7 +80,7 @@ export function PaginaObras() {
           valorTotal: dados.valorTotal || 0,
           fornecedorId: dados.fornecedorId || '',
           fornecedorNome: dados.fornecedorNome || '',
-          data: dados.data?.toMillis?.() || 0,
+          data: dados.data?.toMillis?.() || Date.now(),
         });
       });
       setObras(lista);
@@ -116,7 +113,6 @@ export function PaginaObras() {
     };
   }, []);
 
-  // Cálculos para o Dashboard no Topo
   const fornecedorMaisBarato =
     fornecedores.length > 0
       ? [...fornecedores].sort((a, b) => a.custoTotal - b.custoTotal)[0]
@@ -164,6 +160,57 @@ export function PaginaObras() {
     setDistanciaKmForn('');
   };
 
+  const salvarOrcamento = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nomeObra.trim()) return;
+
+    const fornecedorObj = fornecedores.find((f) => f.id === fornecedorSelecionadoId);
+    const vTotal = parseFloat(valorTotalOrcamento.replace(',', '.')) || 0;
+
+    const dadosObra = {
+      nome: nomeObra.trim(),
+      tipo: tipoObra,
+      largura: parseFloat(largura.replace(',', '.')) || 0,
+      altura: parseFloat(altura.replace(',', '.')) || 0,
+      profundidade: parseFloat(profundidade.replace(',', '.')) || 0,
+      valorTotal: vTotal,
+      fornecedorId: fornecedorSelecionadoId || '',
+      fornecedorNome: fornecedorObj ? fornecedorObj.nome : 'Não vinculado',
+      data: serverTimestamp(),
+    };
+
+    if (obraEmEdicao) {
+      await updateDoc(doc(banco, 'obras', obraEmEdicao.id), dadosObra);
+    } else {
+      await addDoc(collection(banco, 'obras'), dadosObra);
+    }
+
+    fecharModalOrcamento();
+  };
+
+  const abrirEdicaoObra = (obra: Obra) => {
+    setObraEmEdicao(obra);
+    setNomeObra(obra.nome);
+    setTipoObra(obra.tipo || 'area');
+    setLargura(obra.largura ? obra.largura.toString() : '');
+    setAltura(obra.altura ? obra.altura.toString() : '');
+    setProfundidade(obra.profundidade ? obra.profundidade.toString() : '');
+    setValorTotalOrcamento(obra.valorTotal ? obra.valorTotal.toString() : '');
+    setFornecedorSelecionadoId(obra.fornecedorId || '');
+    setModalOrcamentoAberto(true);
+  };
+
+  const fecharModalOrcamento = () => {
+    setModalOrcamentoAberto(false);
+    setObraEmEdicao(null);
+    setNomeObra('');
+    setLargura('');
+    setAltura('');
+    setProfundidade('');
+    setValorTotalOrcamento('');
+    setFornecedorSelecionadoId('');
+  };
+
   const deletarObra = async (id: string) => {
     if (confirm('Deseja realmente excluir este orçamento?')) {
       await deleteDoc(doc(banco, 'obras', id));
@@ -188,7 +235,7 @@ export function PaginaObras() {
         </p>
       </div>
 
-      {/* === DASHBOARD NO TOPO DA PÁGINA === */}
+      {/* === DASHBOARD NO TOPO === */}
       <div className="space-y-3 bg-slate-50 dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
         <h2 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2 text-sm uppercase tracking-wider">
           <Truck size={18} className="text-teal-600" />
@@ -196,7 +243,6 @@ export function PaginaObras() {
         </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Card 1: Menor Valor de Orçamento (Materiais) */}
           <div className="bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-900/50 rounded-2xl p-4 shadow-sm flex items-start gap-3">
             <div className="p-2.5 rounded-xl bg-emerald-500 text-white shadow">
               <DollarSign size={20} />
@@ -223,7 +269,6 @@ export function PaginaObras() {
             </div>
           </div>
 
-          {/* Card 2: Fornecedor com Menor Preço Geral */}
           <div className="bg-white dark:bg-slate-800 border border-teal-200 dark:border-teal-900/50 rounded-2xl p-4 shadow-sm flex items-start gap-3">
             <div className="p-2.5 rounded-xl bg-teal-600 text-white shadow">
               <Award size={20} />
@@ -240,9 +285,7 @@ export function PaginaObras() {
                   <p className="text-sm text-teal-800 dark:text-teal-300 font-bold mt-1">
                     {formatarMoeda(fornecedorMaisBarato.custoTotal)}
                   </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    (Produto + Frete)
-                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">(Produto + Frete)</p>
                 </>
               ) : (
                 <p className="text-xs text-slate-400 mt-1">Nenhum fornecedor cadastrado.</p>
@@ -250,7 +293,6 @@ export function PaginaObras() {
             </div>
           </div>
 
-          {/* Card 3: Menor Distância */}
           <div className="bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-900/50 rounded-2xl p-4 shadow-sm flex items-start gap-3">
             <div className="p-2.5 rounded-xl bg-blue-500 text-white shadow">
               <Navigation size={20} />
@@ -290,7 +332,7 @@ export function PaginaObras() {
         </button>
       </div>
 
-      {/* === LISTAGEM DE ORÇAMENTOS E FORNECEDORES === */}
+      {/* === LISTAGEM DE ORÇAMENTOS === */}
       <div className="space-y-4 pt-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-slate-800 dark:text-slate-200">
@@ -315,19 +357,26 @@ export function PaginaObras() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {obrasFiltradas.map((obra) => (
-              <div key={obra.id} className="cartao p-4 border border-slate-200 dark:border-slate-800 rounded-xl space-y-3 bg-white dark:bg-slate-900">
+              <div key={obra.id} className="cartao p-4 border border-slate-200 dark:border-slate-800 rounded-xl space-y-3 bg-white dark:bg-slate-900 shadow-sm">
                 <div className="flex items-start justify-between">
                   <div>
                     <h3 className="font-bold text-slate-900 dark:text-slate-100">{obra.nome}</h3>
                     <p className="text-xs text-slate-400">Criado em {formatarData(obra.data)}</p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     <button
                       onClick={() => setObraDetalhe(obra)}
                       className="p-2 text-teal-600 hover:bg-teal-50 dark:hover:bg-slate-800 rounded-lg transition-colors"
-                      title="Ver Detalhes"
+                      title="Ver Detalhes / Materiais"
                     >
                       <FileText size={16} />
+                    </button>
+                    <button
+                      onClick={() => abrirEdicaoObra(obra)}
+                      className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                      title="Editar Orçamento"
+                    >
+                      <Edit size={16} />
                     </button>
                     <button
                       onClick={() => deletarObra(obra.id)}
@@ -340,7 +389,9 @@ export function PaginaObras() {
                 </div>
 
                 <div className="flex items-center justify-between text-sm pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <span className="text-slate-500 text-xs">Fornecedor: <strong className="text-slate-700 dark:text-slate-300">{obra.fornecedorNome || 'Não vinculado'}</strong></span>
+                  <span className="text-slate-500 text-xs">
+                    Fornecedor: <strong className="text-slate-700 dark:text-slate-300">{obra.fornecedorNome || 'Não vinculado'}</strong>
+                  </span>
                   <span className="font-extrabold text-teal-600 dark:text-teal-400">{formatarMoeda(obra.valorTotal)}</span>
                 </div>
               </div>
@@ -349,7 +400,7 @@ export function PaginaObras() {
         )}
       </div>
 
-      {/* Seção de Fornecedores Cadastrados */}
+      {/* Fornecedores Cadastrados */}
       <div className="space-y-4 pt-6">
         <h2 className="text-lg font-bold text-slate-800 dark:text-slate-200">
           Fornecedores Cadastrados ({fornecedores.length})
@@ -381,6 +432,36 @@ export function PaginaObras() {
           </div>
         )}
       </div>
+
+      {/* Modal Criar / Editar Orçamento */}
+      <Modal aberto={modalOrcamentoAberto} onFechar={fecharModalOrcamento} titulo={obraEmEdicao ? 'Editar Orçamento' : 'Novo Orçamento de Materiais'}>
+        <form onSubmit={salvarOrcamento} className="space-y-4">
+          <div>
+            <label className="rotulo">Nome do Orçamento / Projeto</label>
+            <input type="text" value={nomeObra} onChange={(e) => setNomeObra(e.target.value)} className="campo-entrada" required placeholder="Ex: Orçamento Pedra Gres" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="rotulo">Valor Total (R$)</label>
+              <input type="text" inputMode="decimal" value={valorTotalOrcamento} onChange={(e) => setValorTotalOrcamento(e.target.value)} className="campo-entrada" placeholder="0,00" required />
+            </div>
+            <div>
+              <label className="rotulo">Vincular Fornecedor</label>
+              <select value={fornecedorSelecionadoId} onChange={(e) => setFornecedorSelecionadoId(e.target.value)} className="campo-entrada">
+                <option value="">Selecione um fornecedor...</option>
+                {fornecedores.map((f) => (
+                  <option key={f.id} value={f.id}>{f.nome}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <button type="submit" className="botao-primario w-full">
+            {obraEmEdicao ? 'Salvar Alterações' : 'Salvar Orçamento'}
+          </button>
+        </form>
+      </Modal>
 
       {/* Modal Cadastro de Fornecedor */}
       <Modal aberto={modalFornecedorAberto} onFechar={() => setModalFornecedorAberto(false)} titulo="Cadastrar Fornecedor / Madeireira">
@@ -416,6 +497,24 @@ export function PaginaObras() {
           <button type="submit" className="botao-primario w-full">Salvar Fornecedor</button>
         </form>
       </Modal>
+
+      {/* Modal Detalhes */}
+      {obraDetalhe && (
+        <Modal aberto={!!obraDetalhe} onFechar={() => setObraDetalhe(null)} titulo={`Detalhes: ${obraDetalhe.nome}`}>
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              <strong>Fornecedor:</strong> {obraDetalhe.fornecedorNome || 'Não vinculado'}
+            </p>
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              <strong>Valor Total:</strong> {formatarMoeda(obraDetalhe.valorTotal)}
+            </p>
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              <strong>Data de Criação:</strong> {formatarData(obraDetalhe.data)}
+            </p>
+            <button onClick={() => setObraDetalhe(null)} className="botao-secundario w-full mt-4">Fechar</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
