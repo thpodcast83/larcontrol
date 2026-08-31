@@ -9,6 +9,7 @@
  *  2. Comparação automática de custo-benefício por fornecedor (valor dos itens + frete / distância).
  *  3. Seleção de itens por unidade ou metro a partir de uma lista completa de construção.
  *  4. Geração de relatório PDF.
+ *  5. Edição e exclusão de orçamentos e fornecedores.
  * -----------------------------------------------------------------------------
  */
 
@@ -17,6 +18,7 @@ import {
   collection,
   onSnapshot,
   addDoc,
+  updateDoc,
   deleteDoc,
   doc,
   serverTimestamp,
@@ -30,6 +32,7 @@ import {
   Hammer,
   Plus,
   Trash2,
+  Edit,
   FileText,
   Truck,
   Award,
@@ -336,6 +339,10 @@ export function PaginaObras() {
   const [obraDetalhe, setObraDetalhe] = useState<Obra | null>(null);
   const [termoBuscaObra, setTermoBuscaObra] = useState('');
 
+  // Estados para controle de Edição
+  const [orcamentoEmEdicaoId, setOrcamentoEmEdicaoId] = useState<string | null>(null);
+  const [fornecedorEmEdicaoId, setFornecedorEmEdicaoId] = useState<string | null>(null);
+
   // Campos do formulário de orçamento de materiais
   const [nomeOrcamento, setNomeOrcamento] = useState('');
   const [fornecedorSelecionadoId, setFornecedorSelecionadoId] = useState('');
@@ -426,7 +433,6 @@ export function PaginaObras() {
    */
   const adicionarItemAoOrcamento = () => {
     const qtd = parseFloat(qtdItem.replace(',', '.')) || 0;
-    const preco = parseFloat(precoItem.replace(',', '.')) || 0;
     if (qtd <= 0) return;
 
     setItensOrcamento([
@@ -448,7 +454,36 @@ export function PaginaObras() {
   };
 
   /**
-   * Salva o orçamento de materiais no Firestore vinculando o fornecedor selecionado.
+   * Abre o modal para cadastrar novo orçamento ou zerar para criação
+   */
+  const abrirModalNovoOrcamento = () => {
+    setOrcamentoEmEdicaoId(null);
+    setNomeOrcamento('');
+    setFornecedorSelecionadoId('');
+    setItensOrcamento([]);
+    setModalOrcamentoAberto(true);
+  };
+
+  /**
+   * Abre o modal de orçamento populado com os dados para edição
+   */
+  const abrirModalEditarOrcamento = (obra: Obra) => {
+    setOrcamentoEmEdicaoId(obra.id);
+    setNomeOrcamento(obra.nome);
+    setFornecedorSelecionadoId(obra.fornecedorId || '');
+    setItensOrcamento(
+      obra.materiais.map((m) => ({
+        nome: m.nome,
+        quantidade: m.quantidade.toString(),
+        tipo: m.unidade === 'un' ? 'unidade' : 'metro',
+        precoUnitario: m.precoUnitario.toString(),
+      }))
+    );
+    setModalOrcamentoAberto(true);
+  };
+
+  /**
+   * Salva ou atualiza o orçamento de materiais no Firestore.
    */
   const salvarOrcamento = async () => {
     if (!nomeOrcamento.trim() || itensOrcamento.length === 0) return;
@@ -471,30 +506,70 @@ export function PaginaObras() {
 
     const fornecedorObj = fornecedores.find((f) => f.id === fornecedorSelecionadoId);
 
-    await addDoc(collection(banco, 'obras'), {
-      nome: nomeOrcamento.trim(),
-      tipo: 'area',
-      largura: 0,
-      altura: 0,
-      profundidade: 0,
-      area: 0,
-      volume: 0,
-      materiais: materiaisFormatados,
-      valorTotal: valorTotalGeral,
-      fornecedorId: fornecedorSelecionadoId || '',
-      fornecedorNome: fornecedorObj ? fornecedorObj.nome : 'Não vinculado',
-      data: serverTimestamp(),
-    });
+    if (orcamentoEmEdicaoId) {
+      // Atualizar existente
+      await updateDoc(doc(banco, 'obras', orcamentoEmEdicaoId), {
+        nome: nomeOrcamento.trim(),
+        materiais: materiaisFormatados,
+        valorTotal: valorTotalGeral,
+        fornecedorId: fornecedorSelecionadoId || '',
+        fornecedorNome: fornecedorObj ? fornecedorObj.nome : 'Não vinculado',
+      });
+    } else {
+      // Criar novo
+      await addDoc(collection(banco, 'obras'), {
+        nome: nomeOrcamento.trim(),
+        tipo: 'area',
+        largura: 0,
+        altura: 0,
+        profundidade: 0,
+        area: 0,
+        volume: 0,
+        materiais: materiaisFormatados,
+        valorTotal: valorTotalGeral,
+        fornecedorId: fornecedorSelecionadoId || '',
+        fornecedorNome: fornecedorObj ? fornecedorObj.nome : 'Não vinculado',
+        data: serverTimestamp(),
+      });
+    }
 
     setNomeOrcamento('');
     setFornecedorSelecionadoId('');
     setItensOrcamento([]);
+    setOrcamentoEmEdicaoId(null);
     setModalOrcamentoAberto(false);
   };
 
   /**
-   * Salva um fornecedor no Firestore calculando custo-benefício.
-   * Custo-benefício = (valorProduto + valorFrete) / distanciaKm.
+   * Abre o modal para cadastrar novo fornecedor
+   */
+  const abrirModalNovoFornecedor = () => {
+    setFornecedorEmEdicaoId(null);
+    setNomeFornecedor('');
+    setTelefone('');
+    setEndereco('');
+    setValorProduto('');
+    setValorFrete('');
+    setDistanciaKm('');
+    setModalFornecedorAberto(true);
+  };
+
+  /**
+   * Abre o modal de fornecedor populado com os dados para edição
+   */
+  const abrirModalEditarFornecedor = (f: Fornecedor) => {
+    setFornecedorEmEdicaoId(f.id);
+    setNomeFornecedor(f.nome);
+    setTelefone(f.telefone);
+    setEndereco(f.endereco);
+    setValorProduto(f.valorProduto ? f.valorProduto.toString() : '');
+    setValorFrete(f.valorFrete ? f.valorFrete.toString() : '');
+    setDistanciaKm(f.distanciaKm ? f.distanciaKm.toString() : '');
+    setModalFornecedorAberto(true);
+  };
+
+  /**
+   * Salva ou atualiza um fornecedor no Firestore calculando custo-benefício.
    */
   const salvarFornecedor = async () => {
     if (!nomeFornecedor.trim()) return;
@@ -506,16 +581,31 @@ export function PaginaObras() {
     const custoTotal = vProduto + vFrete;
     const custoBeneficio = custoTotal / dist;
 
-    await addDoc(collection(banco, 'fornecedores'), {
-      nome: nomeFornecedor.trim(),
-      telefone: telefone.trim(),
-      endereco: endereco.trim(),
-      valorProduto: vProduto,
-      valorFrete: vFrete,
-      distanciaKm: dist,
-      custoTotal,
-      custoBeneficio,
-    });
+    if (fornecedorEmEdicaoId) {
+      // Atualizar existente
+      await updateDoc(doc(banco, 'fornecedores', fornecedorEmEdicaoId), {
+        nome: nomeFornecedor.trim(),
+        telefone: telefone.trim(),
+        endereco: endereco.trim(),
+        valorProduto: vProduto,
+        valorFrete: vFrete,
+        distanciaKm: dist,
+        custoTotal,
+        custoBeneficio,
+      });
+    } else {
+      // Criar novo
+      await addDoc(collection(banco, 'fornecedores'), {
+        nome: nomeFornecedor.trim(),
+        telefone: telefone.trim(),
+        endereco: endereco.trim(),
+        valorProduto: vProduto,
+        valorFrete: vFrete,
+        distanciaKm: dist,
+        custoTotal,
+        custoBeneficio,
+      });
+    }
 
     setNomeFornecedor('');
     setTelefone('');
@@ -523,6 +613,7 @@ export function PaginaObras() {
     setValorProduto('');
     setValorFrete('');
     setDistanciaKm('');
+    setFornecedorEmEdicaoId(null);
     setModalFornecedorAberto(false);
   };
 
@@ -587,11 +678,11 @@ export function PaginaObras() {
 
       {/* === Barra de ações === */}
       <div className="flex flex-wrap items-center gap-3">
-        <button onClick={() => setModalOrcamentoAberto(true)} className="botao-primario">
+        <button onClick={abrirModalNovoOrcamento} className="botao-primario">
           <Plus size={18} />
           Novo orçamento de materiais
         </button>
-        <button onClick={() => setModalFornecedorAberto(true)} className="botao-secundario">
+        <button onClick={abrirModalNovoFornecedor} className="botao-secundario">
           <Truck size={18} />
           Cadastrar fornecedor
         </button>
@@ -657,12 +748,21 @@ export function PaginaObras() {
                     <button
                       onClick={() => gerarPdfObra(obra)}
                       className="p-2 rounded-lg text-slate-400 hover:text-primaria-700 hover:bg-primaria-50 transition-colors"
+                      title="Gerar PDF"
                     >
                       <FileText size={16} />
                     </button>
                     <button
+                      onClick={() => abrirModalEditarOrcamento(obra)}
+                      className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                      title="Editar Orçamento"
+                    >
+                      <Edit size={16} />
+                    </button>
+                    <button
                       onClick={() => removerObra(obra.id)}
                       className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      title="Excluir Orçamento"
                     >
                       <Trash2 size={16} />
                     </button>
@@ -757,12 +857,22 @@ export function PaginaObras() {
                         Índice custo-benefício: {formatarNumero(f.custoBeneficio, 2)}
                       </div>
                     </div>
-                    <button
-                      onClick={() => removerFornecedor(f.id)}
-                      className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => abrirModalEditarFornecedor(f)}
+                        className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                        title="Editar Fornecedor"
+                      >
+                        <Edit size={16} />
+                      </button>
+                      <button
+                        onClick={() => removerFornecedor(f.id)}
+                        className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                        title="Excluir Fornecedor"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))
@@ -770,11 +880,11 @@ export function PaginaObras() {
         </div>
       </div>
 
-      {/* === Modal de Novo Orçamento de Materiais com Vínculo de Fornecedor === */}
+      {/* === Modal de Orçamento de Materiais (Novo / Edição) === */}
       <Modal
         aberto={modalOrcamentoAberto}
         onFechar={() => setModalOrcamentoAberto(false)}
-        titulo="Orçamento para compra de materiais"
+        titulo={orcamentoEmEdicaoId ? 'Editar orçamento de materiais' : 'Orçamento para compra de materiais'}
       >
         <div className="space-y-4">
           <div>
@@ -908,16 +1018,16 @@ export function PaginaObras() {
             disabled={itensOrcamento.length === 0}
             className="botao-primario w-full disabled:opacity-50"
           >
-            Salvar orçamento completo
+            {orcamentoEmEdicaoId ? 'Salvar alterações' : 'Salvar orçamento completo'}
           </button>
         </div>
       </Modal>
 
-      {/* === Modal de cadastro de fornecedor === */}
+      {/* === Modal de cadastro/edição de fornecedor === */}
       <Modal
         aberto={modalFornecedorAberto}
         onFechar={() => setModalFornecedorAberto(false)}
-        titulo="Cadastrar fornecedor"
+        titulo={fornecedorEmEdicaoId ? 'Editar fornecedor' : 'Cadastrar fornecedor'}
       >
         <div className="space-y-4">
           <div>
@@ -989,7 +1099,7 @@ export function PaginaObras() {
             </div>
           </div>
           <button onClick={salvarFornecedor} className="botao-primario w-full">
-            Cadastrar fornecedor
+            {fornecedorEmEdicaoId ? 'Salvar alterações' : 'Cadastrar fornecedor'}
           </button>
         </div>
       </Modal>
