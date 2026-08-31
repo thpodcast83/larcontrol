@@ -4,7 +4,7 @@
  * Módulo de Controle de Despensa e Estoque do LarControl.
  *
  * Funcionalidades:
- *  1. Registro de itens em categorias: Geladeira, Armários, Produtos de Limpeza, Higiene Pessoal.
+ *  1. Registro de itens em categorias: Geladeira, Armários, Produtos de Limpeza, Higiene Pessoal, Lista de Compras.
  *  2. Envio otimizado de itens da despensa/mercado diretamente para a lista de compras (carrinho) sem estourar o limite Spark.
  *  3. Controle de quantidade restante e status (Fechado / Aberto).
  *  4. Histórico do valor pago e local da última compra.
@@ -43,6 +43,7 @@ import {
   Unlock,
   Pencil,
   ShoppingCart,
+  ListPlus,
 } from 'lucide-react';
 
 // Mapeamento de categoria para ícone correspondente.
@@ -51,6 +52,7 @@ const iconeCategoria: Record<string, React.ReactNode> = {
   Armários: <Archive size={18} />,
   'Produtos de Limpeza': <SprayCan size={18} />,
   'Higiene Pessoal': <Sparkles size={18} />,
+  'Lista de Compras': <ListPlus size={18} />,
 };
 
 // Cores para cada categoria (badge).
@@ -59,6 +61,7 @@ const corCategoria: Record<string, string> = {
   Armários: 'bg-amber-100 text-amber-700',
   'Produtos de Limpeza': 'bg-purple-100 text-purple-700',
   'Higiene Pessoal': 'bg-rose-100 text-rose-700',
+  'Lista de Compras': 'bg-teal-100 text-teal-700',
 };
 
 export function PaginaDespensa() {
@@ -69,7 +72,7 @@ export function PaginaDespensa() {
 
   // Campos do formulário.
   const [nome, setNome] = useState('');
-  const [categoria, setCategoria] = useState<ItemDespensa['categoria']>('Armários');
+  const [categoria, setCategoria] = useState<ItemDespensa['categoria'] | 'Lista de Compras'>('Armários');
   const [quantidade, setQuantidade] = useState('1');
   const [unidade, setUnidade] = useState<'un' | 'kg' | 'g'>('un');
   const [status, setStatus] = useState<'Fechado' | 'Aberto'>('Fechado');
@@ -284,7 +287,7 @@ export function PaginaDespensa() {
       ? itens
       : itens.filter((i) => i.categoria === filtroCategoria);
 
-  const categorias = ['Todas', 'Geladeira', 'Armários', 'Produtos de Limpeza', 'Higiene Pessoal'];
+  const categorias = ['Todas', 'Geladeira', 'Armários', 'Produtos de Limpeza', 'Higiene Pessoal', 'Lista de Compras'];
 
   return (
     <div className="space-y-6">
@@ -295,7 +298,7 @@ export function PaginaDespensa() {
           Despensa e Higiene
         </h1>
         <p className="text-slate-500 text-sm mt-1">
-          Controle de estoque doméstico, categorias e reposição para lista de compras.
+          Controle de estoque doméstico, categorias e reposição para lista de compras[cite: 6].
         </p>
       </div>
 
@@ -433,13 +436,14 @@ export function PaginaDespensa() {
             <label className="rotulo">Categoria</label>
             <select
               value={categoria}
-              onChange={(e) => setCategoria(e.target.value as ItemDespensa['categoria'])}
+              onChange={(e) => setCategoria(e.target.value as any)}
               className="campo-entrada"
             >
               <option value="Geladeira">Geladeira</option>
               <option value="Armários">Armários</option>
               <option value="Produtos de Limpeza">Produtos de Limpeza</option>
               <option value="Higiene Pessoal">Higiene Pessoal</option>
+              <option value="Lista de Compras">Lista de Compras</option>
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
