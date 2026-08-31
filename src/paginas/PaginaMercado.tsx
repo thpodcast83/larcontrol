@@ -1,5 +1,5 @@
 /**
- * PaginaMercado.tsx
+ * PaginaMercado.tsx (Atualizado)
  * -----------------------------------------------------------------------------
  * Módulo de Mercado do LarControl - Compras de Rancho e Gastos Extras.
  * -----------------------------------------------------------------------------
@@ -186,7 +186,7 @@ export function PaginaMercado() {
   const [modalAberto, setModalAberto] = useState(false);
   const [salvandoCompra, setSalvandoCompra] = useState(false);
 
-  // Cache local dos produtos do banco para busca instantânea e sem gastar cota
+  // Catálogo unificado para busca de itens no banco
   const [catalogoGeral, setCatalogoGeral] = useState<any[]>([]);
   const [carregandoCatalogo, setCarregandoCatalogo] = useState(true);
   const [termoBusca, setTermoBusca] = useState('');
@@ -221,27 +221,41 @@ export function PaginaMercado() {
     return () => cancelar();
   }, []);
 
-  // 2. Carrega o catálogo geral apenas UMA VEZ ao abrir a página (economiza cota do Firebase)
+  // 2. Carrega o catálogo geral do banco (buscando tanto em 'despensa' quanto em 'produtos')
   useEffect(() => {
     async function carregarCatalogo() {
       try {
-        const snapshot = await getDocs(collection(banco, 'despensa'));
-        const lista: any[] = [];
-        snapshot.forEach((docSnap) => {
-          const d = docSnap.data();
-          lista.push({ id: docSnap.id, ...d });
+        const lista: any[] =[cite: 2];
+        
+        // Busca na despensa
+        const snapDespensa = await getDocs(collection(banco, 'despensa'));[cite: 2]
+        snapDespensa.forEach((docSnap) => {
+          lista.push({ id: docSnap.id, ...docSnap.data() });[cite: 2]
         });
+
+        // Busca opcional em produtos se houver
+        try {
+          const snapProdutos = await getDocs(collection(banco, 'produtos'));
+          snapProdutos.forEach((docSnap) => {
+            if (!lista.some((p) => p.id === docSnap.id)) {
+              lista.push({ id: docSnap.id, ...docSnap.data() });
+            }
+          });
+        } catch (e) {
+          // Coleção opcional não obrigatória
+        }
+
         setCatalogoGeral(lista);
       } catch (err) {
-        console.error('Erro ao carregar catálogo:', err);
+        console.error('Erro ao carregar catálogo:', err);[cite: 2]
       } finally {
-        setCarregandoCatalogo(false);
+        setCarregandoCatalogo(false);[cite: 2]
       }
     }
     carregarCatalogo();
   }, []);
 
-  // Filtro local instantâneo na memória
+  // Filtro local instantâneo na memória para busca de produtos
   const resultadosBusca = useMemo(() => {
     const termo = termoBusca.trim().toLowerCase();
     if (!termo) return [];
@@ -250,6 +264,7 @@ export function PaginaMercado() {
       .slice(0, 15);
   }, [catalogoGeral, termoBusca]);
 
+  // Filtra rigorosamente os itens do carrinho com base no modo ativo (Rancho vs Extras)
   const itensModo = useMemo(() => itensCarrinho.filter((i) => i.modo === modo), [itensCarrinho, modo]);
 
   const totalBruto = useMemo(() => {
@@ -282,7 +297,7 @@ export function PaginaMercado() {
       unidade,
       precoUnitario: preco,
       subtotal,
-      modo,
+      modo, // Salva estritamente no modo atual selecionado (rancho ou extras)
       mercado: mercado || 'Não informado',
       adicionadoPor: usuario?.nome || 'Usuário',
       adicionadoEm: serverTimestamp(),
@@ -306,7 +321,7 @@ export function PaginaMercado() {
       unidade: novaUnidade,
       precoUnitario: preco,
       subtotal,
-      modo,
+      modo, // Vinculado ao modo ativo
       mercado: mercado || 'Não informado',
       adicionadoPor: usuario?.nome || 'Usuário',
       adicionadoEm: serverTimestamp(),
@@ -326,6 +341,7 @@ export function PaginaMercado() {
     await lote.commit();
   };
 
+  // Envia para o histórico SOMENTE os itens do modo ativo selecionado
   const finalizarCompra = async () => {
     if (itensModo.length === 0) return;
     setSalvandoCompra(true);
@@ -382,7 +398,7 @@ export function PaginaMercado() {
         </p>
       </div>
 
-      {/* --- PAINEL DE CONTROLE DA COMPRA (TETO, MERCADO, LOCAL, DATA) --- */}
+      {/* --- PAINEL DE CONTROLE DA COMPRA --- */}
       <div className="cartao p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
@@ -434,7 +450,6 @@ export function PaginaMercado() {
           </div>
         </div>
 
-        {/* Teto e Desconto Global */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100 dark:border-slate-800">
           <div>
             <div className="flex items-center justify-between mb-1">
