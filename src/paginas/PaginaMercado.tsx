@@ -1,7 +1,5 @@
 /**
- * PaginaMercado.tsx (Atualizado - Envio correto para a Lista de Compras)
- * -----------------------------------------------------------------------------
- * Módulo de Mercado do LarControl - Compras de Rancho e Gastos Extras.
+ * PaginaMercado.tsx (Atualizado - Focado apenas no Carrinho e Finalização)
  * -----------------------------------------------------------------------------
  */
 import React, { useEffect, useState, useMemo } from 'react';
@@ -38,7 +36,6 @@ import {
   Save,
   Tag,
   PlusCircle,
-  ListPlus,
 } from 'lucide-react';
 
 function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
@@ -185,30 +182,18 @@ export function PaginaMercado() {
   const [localizacao, setLocalizacao] = useState('');
   const [descontoGlobal, setDescontoGlobal] = useState('');
   
-  // Modals separados para Carrinho vs Criar direto na Lista de Compras
   const [modalCarrinhoAberto, setModalCarrinhoAberto] = useState(false);
-  const [modalListaAberto, setModalListaAberto] = useState(false);
-
   const [salvandoCompra, setSalvandoCompra] = useState(false);
 
-  // Catálogo unificado para busca de itens no banco
   const [catalogoGeral, setCatalogoGeral] = useState<any[]>([]);
   const [carregandoCatalogo, setCarregandoCatalogo] = useState(true);
   const [termoBusca, setTermoBusca] = useState('');
 
-  // Campos para Item do Carrinho
   const [novoNome, setNovoNome] = useState('');
   const [novaQtd, setNovaQtd] = useState('1');
   const [novaUnidade, setNovaUnidade] = useState<'un' | 'kg' | 'g'>('un');
   const [novoPreco, setNovoPreco] = useState('');
 
-  // Campos específicos para criar Produto na Lista de Compras
-  const [produtoListaNome, setProdutoListaNome] = useState('');
-  const [produtoListaQtd, setProdutoListaQtd] = useState('1');
-  const [produtoListaUnidade, setProdutoListaUnidade] = useState<'un' | 'kg' | 'g'>('un');
-  const [produtoListaCategoria, setProdutoListaCategoria] = useState('Geral');
-
-  // 1. Escuta em tempo real o Carrinho Atual
   useEffect(() => {
     const q = query(collection(banco, 'carrinho_atual'), orderBy('adicionadoEm', 'desc'));
     const cancelar = onSnapshot(q, (snapshot) => {
@@ -233,7 +218,6 @@ export function PaginaMercado() {
     return () => cancelar();
   }, []);
 
-  // 2. Carrega o catálogo geral do banco sob demanda
   useEffect(() => {
     async function carregarCatalogo() {
       try {
@@ -349,35 +333,6 @@ export function PaginaMercado() {
     setNovoPreco('');
   };
 
-  // Função dedicada para criar e enviar um produto estritamente para a Lista de Compras (sem ir para o carrinho)
-  const criarProdutoParaListaDeCompras = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!produtoListaNome.trim()) return;
-
-    setModalListaAberto(false);
-    const qtd = parseFloat(produtoListaQtd.replace(',', '.')) || 1;
-
-    try {
-      // Salva na coleção padrão de lista de compras / mercado (ajustada para ir para a lista de compras geral)
-      await addDoc(collection(banco, 'mercado'), {
-        nome: produtoListaNome.trim(),
-        quantidade: qtd,
-        unidade: produtoListaUnidade,
-        categoria: produtoListaCategoria,
-        status: 'Pendente',
-        adicionadoPor: usuario?.nome || 'Usuário',
-        criadoEm: serverTimestamp(),
-      });
-
-      alert(`"${produtoListaNome.trim()}" foi enviado para a lista de compras com sucesso!`);
-      setProdutoListaNome('');
-      setProdutoListaQtd('1');
-    } catch (erro) {
-      console.error('Erro ao enviar para a lista de compras:', erro);
-      alert('Erro ao criar o produto na lista de compras.');
-    }
-  };
-
   const limparCarrinho = async () => {
     if (!confirm('Deseja limpar todos os itens do carrinho atual?')) return;
     const lote = writeBatch(banco);
@@ -443,7 +398,6 @@ export function PaginaMercado() {
         </p>
       </div>
 
-      {/* --- PAINEL DE CONTROLE DA COMPRA --- */}
       <div className="cartao p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
@@ -556,7 +510,6 @@ export function PaginaMercado() {
         </div>
       </div>
 
-      {/* --- CARD DE RESUMO FINANCEIRO --- */}
       <div className="cartao-destaque bg-gradient-to-r from-teal-800 to-teal-950 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between p-5 rounded-2xl shadow-lg gap-4">
         <div>
           <span className="text-teal-200 text-xs font-semibold uppercase tracking-wider">
@@ -598,7 +551,6 @@ export function PaginaMercado() {
         </div>
       </div>
 
-      {/* Seletor de Modo (Rancho vs Extras) */}
       <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
         <button
           onClick={() => setModo('rancho')}
@@ -618,7 +570,6 @@ export function PaginaMercado() {
         </button>
       </div>
 
-      {/* --- BARRA DE BUSCA RÁPIDA NO BANCO --- */}
       <div className="relative">
         <label className="text-xs font-semibold text-slate-500 mb-1 block">
           Buscar no banco de dados para colocar no carrinho:
@@ -662,21 +613,10 @@ export function PaginaMercado() {
         )}
       </div>
 
-      {/* Botões de Ação Principal (Agora separado para Carrinho vs Criar direto na Lista de Compras) */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-2">
-          <button onClick={() => setModalCarrinhoAberto(true)} className="botao-primario" type="button">
-            <Plus size={18} /> Adicionar ao Carrinho
-          </button>
-          
-          <button 
-            onClick={() => setModalListaAberto(true)} 
-            className="bg-slate-700 hover:bg-slate-800 text-white font-medium text-sm py-2.5 px-4 rounded-xl shadow-sm transition-all flex items-center gap-2" 
-            type="button"
-          >
-            <ListPlus size={18} /> Criar na Lista de Compras
-          </button>
-        </div>
+        <button onClick={() => setModalCarrinhoAberto(true)} className="botao-primario" type="button">
+          <Plus size={18} /> Adicionar ao Carrinho
+        </button>
 
         <button
           onClick={finalizarCompra}
@@ -689,7 +629,6 @@ export function PaginaMercado() {
         </button>
       </div>
 
-      {/* --- LISTA DE ITENS NO CARRINHO --- */}
       <div className="space-y-3">
         <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300">
           Itens no Carrinho ({itensModo.length})
@@ -704,7 +643,6 @@ export function PaginaMercado() {
         )}
       </div>
 
-      {/* Modal para Adicionar Item no Carrinho */}
       <Modal aberto={modalCarrinhoAberto} onFechar={() => setModalCarrinhoAberto(false)} titulo="Adicionar Item ao Carrinho">
         <form onSubmit={adicionarManual} className="space-y-4">
           <div>
@@ -752,64 +690,6 @@ export function PaginaMercado() {
           </div>
           <button type="submit" className="botao-primario w-full">
             Adicionar ao Carrinho
-          </button>
-        </form>
-      </Modal>
-
-      {/* Modal para Criar Produto Direto na Lista de Compras */}
-      <Modal aberto={modalListaAberto} onFechar={() => setModalListaAberto(false)} titulo="Criar Produto na Lista de Compras">
-        <form onSubmit={criarProdutoParaListaDeCompras} className="space-y-4">
-          <div>
-            <label className="rotulo">Nome do produto</label>
-            <input
-              type="text"
-              placeholder="Ex: Tomate, Papel Higiênico..."
-              value={produtoListaNome}
-              onChange={(e) => setProdutoListaNome(e.target.value)}
-              className="campo-entrada"
-              required
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="rotulo">Quantidade</label>
-              <input
-                type="text"
-                value={produtoListaQtd}
-                onChange={(e) => setProdutoListaQtd(e.target.value)}
-                className="campo-entrada"
-                required
-              />
-            </div>
-            <div>
-              <label className="rotulo">Unidade</label>
-              <select
-                value={produtoListaUnidade}
-                onChange={(e) => setProdutoListaUnidade(e.target.value as 'un' | 'kg' | 'g')}
-                className="campo-entrada"
-              >
-                <option value="un">Unidade (un)</option>
-                <option value="kg">Quilo (kg)</option>
-                <option value="g">Grama (g)</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="rotulo">Categoria / Seção</label>
-            <select
-              value={produtoListaCategoria}
-              onChange={(e) => setProdutoListaCategoria(e.target.value)}
-              className="campo-entrada"
-            >
-              <option value="Geral">Geral</option>
-              <option value="Geladeira">Geladeira</option>
-              <option value="Armários">Armários</option>
-              <option value="Hortifrúti">Hortifrúti</option>
-              <option value="Limpeza">Limpeza</option>
-            </select>
-          </div>
-          <button type="submit" className="botao-primario w-full">
-            Enviar para a Lista de Compras
           </button>
         </form>
       </Modal>
