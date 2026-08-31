@@ -40,6 +40,9 @@ import {
   Phone,
   MapPin,
   Calculator,
+  Search,
+  X,
+  Package,
 } from 'lucide-react';
 
 /**
@@ -152,6 +155,7 @@ export function PaginaObras() {
   const [modalObraAberto, setModalObraAberto] = useState(false);
   const [modalFornecedorAberto, setModalFornecedorAberto] = useState(false);
   const [obraDetalhe, setObraDetalhe] = useState<Obra | null>(null);
+  const [termoBuscaObra, setTermoBuscaObra] = useState('');
 
   // Campos do formulário de obra.
   const [nomeObra, setNomeObra] = useState('');
@@ -339,6 +343,11 @@ export function PaginaObras() {
     );
   };
 
+  // Filtragem de obras por termo de busca
+  const obrasFiltradas = obras.filter((obra) =>
+    obra.nome.toLowerCase().includes(termoBuscaObra.toLowerCase())
+  );
+
   // Encontra o fornecedor com melhor custo-benefício (menor valor).
   const melhorFornecedor = fornecedores.length > 0
     ? fornecedores.reduce((melhor, f) =>
@@ -372,19 +381,40 @@ export function PaginaObras() {
       </div>
 
       {/* === Lista de obras === */}
-      <div>
-        <h2 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
-          <Ruler size={20} className="text-primaria-700" />
-          Obras cadastradas
-        </h2>
+      <div className="space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <h2 className="font-bold text-slate-800 flex items-center gap-2">
+            <Ruler size={20} className="text-primaria-700" />
+            Obras cadastradas
+          </h2>
+          <div className="relative w-full sm:w-64">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Buscar obra..."
+              value={termoBuscaObra}
+              onChange={(e) => setTermoBuscaObra(e.target.value)}
+              className="w-full pl-9 pr-8 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primaria-500 text-sm shadow-sm"
+            />
+            {termoBuscaObra && (
+              <button
+                onClick={() => setTermoBuscaObra('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="space-y-3">
-          {obras.length === 0 ? (
+          {obrasFiltradas.length === 0 ? (
             <div className="cartao text-center py-12 text-slate-400">
               <Hammer size={40} className="mx-auto mb-3 opacity-40" />
-              <p>Nenhuma obra cadastrada ainda.</p>
+              <p>{obras.length === 0 ? 'Nenhuma obra cadastrada ainda.' : 'Nenhuma obra encontrada para a busca.'}</p>
             </div>
           ) : (
-            obras.map((obra) => (
+            obrasFiltradas.map((obra) => (
               <div key={obra.id} className="cartao animar-entrada">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
