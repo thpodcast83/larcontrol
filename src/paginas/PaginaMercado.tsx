@@ -1,5 +1,5 @@
 /**
- * PaginaMercado.tsx (Atualizado e Otimizado para o Plano Spark)
+ * PaginaMercado.tsx (Atualizado - Envio correto para a Lista de Compras)
  * -----------------------------------------------------------------------------
  * Módulo de Mercado do LarControl - Compras de Rancho e Gastos Extras.
  * -----------------------------------------------------------------------------
@@ -38,6 +38,7 @@ import {
   Save,
   Tag,
   PlusCircle,
+  ListPlus,
 } from 'lucide-react';
 
 function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
@@ -183,18 +184,29 @@ export function PaginaMercado() {
   const [mercado, setMercado] = useState('');
   const [localizacao, setLocalizacao] = useState('');
   const [descontoGlobal, setDescontoGlobal] = useState('');
-  const [modalAberto, setModalAberto] = useState(false);
+  
+  // Modals separados para Carrinho vs Criar direto na Lista de Compras
+  const [modalCarrinhoAberto, setModalCarrinhoAberto] = useState(false);
+  const [modalListaAberto, setModalListaAberto] = useState(false);
+
   const [salvandoCompra, setSalvandoCompra] = useState(false);
 
-  // Catálogo unificado para busca de itens no banco (buscando em 'despensa' e 'mercado')
+  // Catálogo unificado para busca de itens no banco
   const [catalogoGeral, setCatalogoGeral] = useState<any[]>([]);
   const [carregandoCatalogo, setCarregandoCatalogo] = useState(true);
   const [termoBusca, setTermoBusca] = useState('');
 
+  // Campos para Item do Carrinho
   const [novoNome, setNovoNome] = useState('');
   const [novaQtd, setNovaQtd] = useState('1');
   const [novaUnidade, setNovaUnidade] = useState<'un' | 'kg' | 'g'>('un');
   const [novoPreco, setNovoPreco] = useState('');
+
+  // Campos específicos para criar Produto na Lista de Compras
+  const [produtoListaNome, setProdutoListaNome] = useState('');
+  const [produtoListaQtd, setProdutoListaQtd] = useState('1');
+  const [produtoListaUnidade, setProdutoListaUnidade] = useState<'un' | 'kg' | 'g'>('un');
+  const [produtoListaCategoria, setProdutoListaCategoria] = useState('Geral');
 
   // 1. Escuta em tempo real o Carrinho Atual
   useEffect(() => {
@@ -221,19 +233,18 @@ export function PaginaMercado() {
     return () => cancelar();
   }, []);
 
-  // 2. Carrega o catálogo geral do banco sob demanda (buscando em 'despensa' e 'mercado') para respeitar o limite Spark
+  // 2. Carrega o catálogo geral do banco sob demanda
   useEffect(() => {
     async function carregarCatalogo() {
       try {
         const lista: any[] = [];
         const idsVistos = new Set<string>();
 
-        // Busca na coleção 'despensa'
         const snapDespensa = await getDocs(collection(banco, 'despensa'));
         snapDespensa.forEach((docSnap) => {
           const dados = docSnap.data();
           const nomeItem = (dados.nome || '').trim();
-          const chaveUnica = `${nomeItem.toLowerCase()}_${dados.quantidade || 1}_${dados.unidade || 'un'}_${dados.ultimoPreco || dados.precoUnitario || 0}`;
+          const chaveUnica = `${nomeItem.toLowerCase()}_${dados.quantidade || 1}`;
 
           if (nomeItem && !idsVistos.has(chaveUnica)) {
             idsVistos.add(chaveUnica);
@@ -241,12 +252,11 @@ export function PaginaMercado() {
           }
         });
 
-        // Busca na coleção 'mercado'
         const snapMercado = await getDocs(collection(banco, 'mercado'));
         snapMercado.forEach((docSnap) => {
           const dados = docSnap.data();
           const nomeItem = (dados.nome || '').trim();
-          const chaveUnica = `${nomeItem.toLowerCase()}_${dados.quantidade || 1}_${dados.unidade || 'un'}_${dados.precoUnitario || dados.ultimoPreco || 0}`;
+          const chaveUnica = `${nomeItem.toLowerCase()}_${dados.quantidade || 1}`;
 
           if (nomeItem && !idsVistos.has(chaveUnica)) {
             idsVistos.add(chaveUnica);
@@ -264,7 +274,6 @@ export function PaginaMercado() {
     carregarCatalogo();
   }, []);
 
-  // Filtro local instantâneo na memória para busca de produtos e suas variações exatas
   const resultadosBusca = useMemo(() => {
     const termo = termoBusca.trim().toLowerCase();
     if (!termo) return [];
@@ -273,7 +282,6 @@ export function PaginaMercado() {
       .slice(0, 15);
   }, [catalogoGeral, termoBusca]);
 
-  // Filtra rigorosamente os itens do carrinho com base no modo ativo (Rancho vs Extras)
   const itensModo = useMemo(() => itensCarrinho.filter((i) => i.modo === modo), [itensCarrinho, modo]);
 
   const totalBruto = useMemo(() => {
@@ -306,7 +314,7 @@ export function PaginaMercado() {
       unidade,
       precoUnitario: preco,
       subtotal,
-      modo, // Salva estritamente no modo atual selecionado (rancho ou extras)
+      modo,
       mercado: mercado || 'Não informado',
       adicionadoPor: usuario?.nome || 'Usuário',
       adicionadoEm: serverTimestamp(),
@@ -319,7 +327,7 @@ export function PaginaMercado() {
     if (e) e.preventDefault();
     if (!novoNome.trim()) return;
 
-    setModalAberto(false);
+    setModalCarrinhoAberto(false);
     const qtd = parseFloat(novaQtd.replace(',', '.')) || 1;
     const preco = parseFloat(novoPreco.replace(',', '.')) || 0;
     const subtotal = novaUnidade === 'g' ? (qtd / 1000) * preco : qtd * preco;
@@ -330,7 +338,7 @@ export function PaginaMercado() {
       unidade: novaUnidade,
       precoUnitario: preco,
       subtotal,
-      modo, // Vinculado ao modo ativo
+      modo,
       mercado: mercado || 'Não informado',
       adicionadoPor: usuario?.nome || 'Usuário',
       adicionadoEm: serverTimestamp(),
@@ -339,6 +347,35 @@ export function PaginaMercado() {
     setNovoNome('');
     setNovaQtd('1');
     setNovoPreco('');
+  };
+
+  // Função dedicada para criar e enviar um produto estritamente para a Lista de Compras (sem ir para o carrinho)
+  const criarProdutoParaListaDeCompras = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!produtoListaNome.trim()) return;
+
+    setModalListaAberto(false);
+    const qtd = parseFloat(produtoListaQtd.replace(',', '.')) || 1;
+
+    try {
+      // Salva na coleção padrão de lista de compras / mercado (ajustada para ir para a lista de compras geral)
+      await addDoc(collection(banco, 'mercado'), {
+        nome: produtoListaNome.trim(),
+        quantidade: qtd,
+        unidade: produtoListaUnidade,
+        categoria: produtoListaCategoria,
+        status: 'Pendente',
+        adicionadoPor: usuario?.nome || 'Usuário',
+        criadoEm: serverTimestamp(),
+      });
+
+      alert(`"${produtoListaNome.trim()}" foi enviado para a lista de compras com sucesso!`);
+      setProdutoListaNome('');
+      setProdutoListaQtd('1');
+    } catch (erro) {
+      console.error('Erro ao enviar para a lista de compras:', erro);
+      alert('Erro ao criar o produto na lista de compras.');
+    }
   };
 
   const limparCarrinho = async () => {
@@ -350,7 +387,6 @@ export function PaginaMercado() {
     await lote.commit();
   };
 
-  // Envia para o histórico SOMENTE os itens do modo ativo selecionado
   const finalizarCompra = async () => {
     if (itensModo.length === 0) return;
     setSalvandoCompra(true);
@@ -626,11 +662,21 @@ export function PaginaMercado() {
         )}
       </div>
 
-      {/* Botões de Ação Principal */}
+      {/* Botões de Ação Principal (Agora separado para Carrinho vs Criar direto na Lista de Compras) */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <button onClick={() => setModalAberto(true)} className="botao-primario" type="button">
-          <Plus size={18} /> Adicionar Item Manual
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setModalCarrinhoAberto(true)} className="botao-primario" type="button">
+            <Plus size={18} /> Adicionar ao Carrinho
+          </button>
+          
+          <button 
+            onClick={() => setModalListaAberto(true)} 
+            className="bg-slate-700 hover:bg-slate-800 text-white font-medium text-sm py-2.5 px-4 rounded-xl shadow-sm transition-all flex items-center gap-2" 
+            type="button"
+          >
+            <ListPlus size={18} /> Criar na Lista de Compras
+          </button>
+        </div>
 
         <button
           onClick={finalizarCompra}
@@ -651,15 +697,15 @@ export function PaginaMercado() {
         {itensModo.length === 0 ? (
           <div className="cartao text-center py-12 text-slate-400 rounded-xl border border-dashed border-slate-300 dark:border-slate-800">
             <p>Nenhum produto no carrinho no momento.</p>
-            <p className="text-xs mt-1">Use a barra de pesquisa acima para buscar do banco ou clique em "Adicionar Item Manual".</p>
+            <p className="text-xs mt-1">Use a barra de pesquisa acima para buscar do banco ou clique em "Adicionar ao Carrinho".</p>
           </div>
         ) : (
           itensModo.map((item) => <ItemCarrinhoCard key={item.id} item={item} />)
         )}
       </div>
 
-      {/* Modal para Adicionar Item Manual */}
-      <Modal aberto={modalAberto} onFechar={() => setModalAberto(false)} titulo="Adicionar Item Manual">
+      {/* Modal para Adicionar Item no Carrinho */}
+      <Modal aberto={modalCarrinhoAberto} onFechar={() => setModalCarrinhoAberto(false)} titulo="Adicionar Item ao Carrinho">
         <form onSubmit={adicionarManual} className="space-y-4">
           <div>
             <label className="rotulo">Nome do produto</label>
@@ -706,6 +752,64 @@ export function PaginaMercado() {
           </div>
           <button type="submit" className="botao-primario w-full">
             Adicionar ao Carrinho
+          </button>
+        </form>
+      </Modal>
+
+      {/* Modal para Criar Produto Direto na Lista de Compras */}
+      <Modal aberto={modalListaAberto} onFechar={() => setModalListaAberto(false)} titulo="Criar Produto na Lista de Compras">
+        <form onSubmit={criarProdutoParaListaDeCompras} className="space-y-4">
+          <div>
+            <label className="rotulo">Nome do produto</label>
+            <input
+              type="text"
+              placeholder="Ex: Tomate, Papel Higiênico..."
+              value={produtoListaNome}
+              onChange={(e) => setProdutoListaNome(e.target.value)}
+              className="campo-entrada"
+              required
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="rotulo">Quantidade</label>
+              <input
+                type="text"
+                value={produtoListaQtd}
+                onChange={(e) => setProdutoListaQtd(e.target.value)}
+                className="campo-entrada"
+                required
+              />
+            </div>
+            <div>
+              <label className="rotulo">Unidade</label>
+              <select
+                value={produtoListaUnidade}
+                onChange={(e) => setProdutoListaUnidade(e.target.value as 'un' | 'kg' | 'g')}
+                className="campo-entrada"
+              >
+                <option value="un">Unidade (un)</option>
+                <option value="kg">Quilo (kg)</option>
+                <option value="g">Grama (g)</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="rotulo">Categoria / Seção</label>
+            <select
+              value={produtoListaCategoria}
+              onChange={(e) => setProdutoListaCategoria(e.target.value)}
+              className="campo-entrada"
+            >
+              <option value="Geral">Geral</option>
+              <option value="Geladeira">Geladeira</option>
+              <option value="Armários">Armários</option>
+              <option value="Hortifrúti">Hortifrúti</option>
+              <option value="Limpeza">Limpeza</option>
+            </select>
+          </div>
+          <button type="submit" className="botao-primario w-full">
+            Enviar para a Lista de Compras
           </button>
         </form>
       </Modal>
