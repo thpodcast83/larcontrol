@@ -9,7 +9,7 @@
  *  3. Envio otimizado de itens da despensa/mercado diretamente para a lista de compras (carrinho) sem estourar o limite Spark.
  *  4. Controle de quantidade restante e status (Fechado / Aberto).
  *  5. Histórico do valor pago e local da última compra.
- *  6. Geração de relatório PDF (geral ou filtrado/Lista de Compras) e importação em massa.
+ *  6. Geração de relatório PDF estruturado em colunas corretas (Item | Categoria | Qtd | Status | Preço | Local) e importação em massa.
  * -----------------------------------------------------------------------------
  */
 
@@ -486,7 +486,7 @@ export function PaginaDespensa() {
               />
             </div>
             <div>
-              <label className="rotulo5">Local da compra</label>
+              <label className="rotulo">Local da compra</label>
               <input
                 type="text"
                 placeholder="Ex: Mercado X"
