@@ -9,7 +9,7 @@
  *  3. Envio otimizado de itens da despensa/mercado diretamente para a lista de compras (carrinho) sem estourar o limite Spark.
  *  4. Controle de quantidade restante e status (Fechado / Aberto).
  *  5. Histórico do valor pago e local da última compra.
- *  6. Geração de relatório PDF formatado corretamente com largura de colunas ajustada para evitar sobreposição.
+ *  6. Geração de relatório PDF formatado corretamente com largura de colunas ajustada e cálculo correto do valor total multiplicando a quantidade pelo preço.
  * -----------------------------------------------------------------------------
  */
 
@@ -239,11 +239,18 @@ export function PaginaDespensa() {
       i.ultimoLocal,
     ]);
 
-    // Passando larguras personalizadas para as colunas (ex: Item com mais espaço para evitar sobreposição)
+    // Multiplica a quantidade pelo preço de cada produto para calcular o valor total correto da listagem
+    const valorTotal = itensFiltrados.reduce((acc, i) => {
+      const preco = i.ultimoPreco || 0;
+      const qtd = i.quantidade || 1;
+      return acc + (preco * qtd);
+    }, 0);
+
+    const totalTexto = `Valor Total dos Itens Listados: ${formatarMoeda(valorTotal)}`;
     const colWidths = [140, 75, 45, 55, 60, 65];
 
     gerarPdfGenerico(
-      { titulo: tituloRelatorio, colunas, linhas, colWidths },
+      { titulo: tituloRelatorio, colunas, linhas, total: totalTexto, colWidths },
       nomeArquivo
     );
   };
@@ -463,7 +470,7 @@ export function PaginaDespensa() {
                   status === 'Fechado' ? 'bg-primaria-700 text-white' : 'bg-slate-100 text-slate-500'
                 }`}
               >
-                <Lock size5={16} className="inline mr-1" /> Fechado
+                <Lock size={16} className="inline mr-1" /> Fechado
               </button>
               <button
                 type="button"
