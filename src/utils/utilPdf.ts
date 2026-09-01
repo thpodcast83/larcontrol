@@ -2,38 +2,25 @@
  * utilPdf.ts
  * -----------------------------------------------------------------------------
  * Funções utilitárias para geração de relatórios em PDF usando a biblioteca jsPDF.
- *
- * Atualizado para suportar larguras de colunas personalizadas opcionais, evitando
- * sobreposição de texto entre colunas estreitas e largas (como "Item" e "Categoria").
  * -----------------------------------------------------------------------------
  */
 
 import { jsPDF } from 'jspdf';
 
-/**
- * Interface que define os parâmetros comuns para geração de PDF.
- */
 interface ParametrosPdf {
-  titulo: string; // Título do relatório.
-  subtitulo?: string; // Subtítulo ou período do relatório.
-  colunas: string[]; // Cabeçalhos das colunas da tabela.
-  linhas: (string | number)[][]; // Dados das linhas da tabela.
-  total?: string; // Linha de total a ser exibida no final.
-  colWidths?: number[]; // Larguras opcionais para cada coluna.
+  titulo: string;
+  subtitulo?: string;
+  colunas: string[];
+  linhas: (string | number)[][];
+  total?: string;
+  colWidths?: number[];
 }
 
-/**
- * gerarPdfGenerico
- * Função base que cria um PDF com cabeçalho, tabela de dados e rodapé.
- *
- * @param parametros - Objeto com título, colunas, linhas, total e larguras opcionais.
- * @param nomeArquivo - Nome do arquivo PDF a ser baixado.
- */
 export function gerarPdfGenerico(parametros: ParametrosPdf, nomeArquivo: string): void {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
 
   // --- Cabeçalho do documento ---
-  doc.setFillColor(15, 118, 110); // teal-700
+  doc.setFillColor(15, 118, 110);
   doc.rect(0, 0, 210, 25, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(18);
@@ -43,14 +30,12 @@ export function gerarPdfGenerico(parametros: ParametrosPdf, nomeArquivo: string)
   doc.setFont('helvetica', 'normal');
   doc.text(parametros.titulo, 14, 19);
 
-  // Subtítulo (se houver).
   doc.setTextColor(100, 116, 139);
   doc.setFontSize(9);
   if (parametros.subtitulo) {
     doc.text(parametros.subtitulo, 14, 32);
   }
 
-  // Data de geração do relatório.
   const dataGeracao = new Date().toLocaleString('pt-BR');
   doc.text(`Gerado em: ${dataGeracao}`, 14, parametros.subtitulo ? 38 : 32);
 
@@ -58,12 +43,10 @@ export function gerarPdfGenerico(parametros: ParametrosPdf, nomeArquivo: string)
   let y = parametros.subtitulo ? 45 : 40;
 
   const margemEsquerda = 14;
-  const larguraUtil = 182; // 210 - 2*14
+  const larguraUtil = 182;
 
-  // Define as larguras das colunas: se fornecidas, usa-as; caso contrário, divide igualmente.
   let largurasColunas: number[];
   if (parametros.colWidths && parametros.colWidths.length === parametros.colunas.length) {
-    // Normaliza para garantir que a soma respeite a largura útil da página (182mm)
     const somaTotal = parametros.colWidths.reduce((acc, val) => acc + val, 0);
     largurasColunas = parametros.colWidths.map((w) => (w / somaTotal) * larguraUtil);
   } else {
@@ -92,15 +75,13 @@ export function gerarPdfGenerico(parametros: ParametrosPdf, nomeArquivo: string)
   doc.setTextColor(30, 41, 59);
 
   parametros.linhas.forEach((linha, idxLinha) => {
-    // Verifica se precisa quebrar página.
     if (y > 280) {
       doc.addPage();
       y = 20;
     }
 
-    // Alterna cor de fundo das linhas (zebra).
     if (idxLinha % 2 === 0) {
-      doc.setFillColor(240, 253, 250); // teal-50
+      doc.setFillColor(240, 253, 250);
       doc.rect(margemEsquerda, y, larguraUtil, 8, 'F');
     }
 
@@ -110,9 +91,6 @@ export function gerarPdfGenerico(parametros: ParametrosPdf, nomeArquivo: string)
     linha.forEach((celula, i) => {
       const larguraCol = largurasColunas[i];
       const texto = String(celula);
-
-      // Limita dinamicamente o número de caracteres com base no espaço da coluna para evitar sobreposição
-      // Aproximadamente 2.2mm por caractere em fonte tamanho 8.
       const caracteresMaximos = Math.max(8, Math.floor((larguraCol - 4) / 2.2));
       const textoTruncado =
         texto.length > caracteresMaximos
@@ -152,6 +130,5 @@ export function gerarPdfGenerico(parametros: ParametrosPdf, nomeArquivo: string)
     );
   }
 
-  // Salva o arquivo PDF.
   doc.save(nomeArquivo);
 }
