@@ -497,13 +497,21 @@ export function PaginaDespensa() {
             </div>
             <div>
               <label className="rotulo">Local da compra</label>
-              <input
-                type="text"
-                placeholder="Ex: Mercado X"
+              <select
                 value={ultimoLocal}
                 onChange={(e) => setUltimoLocal(e.target.value)}
                 className="campo-entrada"
-              />
+              >
+                <option value="Não informado">Selecione o mercado</option>
+                <option value="Guarapari">Guarapari</option>
+                <option value="MaxCenter">MaxCenter</option>
+                <option value="Atacadão">Atacadão</option>
+                <option value="Carrefour">Carrefour</option>
+                <option value="Cestto">Cestto</option>
+                <option value="Zaffari">Zaffari</option>
+                <option value="Gauchão">Gauchão</option>
+                <option value="Fort Atacadista">Fort Atacadista</option>
+              </select>
             </div>
           </div>
           <button type="submit" className="botao-primario w-full">
