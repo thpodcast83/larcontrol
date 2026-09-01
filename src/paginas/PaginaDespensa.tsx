@@ -9,7 +9,7 @@
  *  3. Envio otimizado de itens da despensa/mercado diretamente para a lista de compras (carrinho) sem estourar o limite Spark.
  *  4. Controle de quantidade restante e status (Fechado / Aberto).
  *  5. Histórico do valor pago e local da última compra.
- *  6. Geração de relatório PDF e importação em massa.
+ *  6. Geração de relatório PDF (geral ou filtrado/Lista de Compras) e importação em massa.
  * -----------------------------------------------------------------------------
  */
 
@@ -226,6 +226,9 @@ export function PaginaDespensa() {
   };
 
   const gerarPdf = () => {
+    const tituloRelatorio = filtroCategoria === 'Lista de Compras' ? 'Relatório - Lista de Compras' : 'Relatório de Despensa';
+    const nomeArquivo = filtroCategoria === 'Lista de Compras' ? 'relatorio-lista-compras.pdf' : 'relatorio-despensa-larcontrol.pdf';
+
     const colunas = ['Item', 'Categoria', 'Qtd', 'Status', 'Último Preço', 'Local'];
     const linhas = itensFiltrados.map((i) => [
       i.nome,
@@ -237,8 +240,8 @@ export function PaginaDespensa() {
     ]);
 
     gerarPdfGenerico(
-      { titulo: 'Relatório de Despensa', colunas, linhas },
-      'relatorio-despensa-larcontrol.pdf'
+      { titulo: tituloRelatorio, colunas, linhas },
+      nomeArquivo
     );
   };
 
@@ -262,7 +265,7 @@ export function PaginaDespensa() {
           Despensa e Higiene
         </h1>
         <p className="text-slate-500 text-sm mt-1">
-          Controle de estoque doméstico, categorias e reposição para lista de compras[cite: 6].
+          Controle de estoque doméstico, categorias e reposição para lista de compras.
         </p>
       </div>
 
@@ -312,7 +315,7 @@ export function PaginaDespensa() {
         <BotaoImportar onImportar={importarItens} />
         <button type="button" onClick={gerarPdf} className="botao-secundario">
           <FileText size={18} />
-          Exportar PDF
+          {filtroCategoria === 'Lista de Compras' ? 'Exportar Lista PDF' : 'Exportar PDF'}
         </button>
       </div>
 
@@ -483,7 +486,7 @@ export function PaginaDespensa() {
               />
             </div>
             <div>
-              <label className="rotulo">Local da compra</label>
+              <label className="rotulo5">Local da compra</label>
               <input
                 type="text"
                 placeholder="Ex: Mercado X"
