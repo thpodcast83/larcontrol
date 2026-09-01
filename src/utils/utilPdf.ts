@@ -3,9 +3,8 @@
  * -----------------------------------------------------------------------------
  * Funções utilitárias para geração de relatórios em PDF usando a biblioteca jsPDF.
  *
- * Cada módulo do LarControl (Mercado, Despensa, Combustível, Finanças, Obras)
- * possui sua própria função geradora de PDF, que formata os dados do módulo
- * em um documento PDF profissional e baixável.
+ * Atualizado para suportar larguras de colunas personalizadas opcionais, evitando
+ * sobreposição de texto entre colunas estreitas e largas (como "Item" e "Categoria").
  * -----------------------------------------------------------------------------
  */
 
@@ -20,21 +19,20 @@ interface ParametrosPdf {
   colunas: string[]; // Cabeçalhos das colunas da tabela.
   linhas: (string | number)[][]; // Dados das linhas da tabela.
   total?: string; // Linha de total a ser exibida no final.
+  colWidths?: number[]; // Larguras opcionais para cada coluna.
 }
 
 /**
  * gerarPdfGenerico
  * Função base que cria um PDF com cabeçalho, tabela de dados e rodapé.
- * É chamada por cada módulo com seus dados específicos.
  *
- * @param parametros - Objeto com título, colunas, linhas e total.
+ * @param parametros - Objeto com título, colunas, linhas, total e larguras opcionais.
  * @param nomeArquivo - Nome do arquivo PDF a ser baixado.
  */
 export function gerarPdfGenerico(parametros: ParametrosPdf, nomeArquivo: string): void {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
 
   // --- Cabeçalho do documento ---
-  // Faixa teal no topo.
   doc.setFillColor(15, 118, 110); // teal-700
   doc.rect(0, 0, 210, 25, 'F');
   doc.setTextColor(255, 255, 255);
@@ -59,20 +57,32 @@ export function gerarPdfGenerico(parametros: ParametrosPdf, nomeArquivo: string)
   // --- Tabela de dados ---
   let y = parametros.subtitulo ? 45 : 40;
 
+  const margemEsquerda = 14;
+  const larguraUtil = 182; // 210 - 2*14
+
+  // Define as larguras das colunas: se fornecidas, usa-as; caso contrário, divide igualmente.
+  let largurasColunas: number[];
+  if (parametros.colWidths && parametros.colWidths.length === parametros.colunas.length) {
+    // Normaliza para garantir que a soma respeite a largura útil da página (182mm)
+    const somaTotal = parametros.colWidths.reduce((acc, val) => acc + val, 0);
+    largurasColunas = parametros.colWidths.map((w) => (w / somaTotal) * larguraUtil);
+  } else {
+    const larguraIgual = larguraUtil / parametros.colunas.length;
+    largurasColunas = parametros.colunas.map(() => larguraIgual);
+  }
+
   // Cabeçalho da tabela.
   doc.setFillColor(15, 118, 110);
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
 
-  // Calcula a largura de cada coluna (dividindo igualmente a largura útil).
-  const margemEsquerda = 14;
-  const larguraUtil = 182; // 210 - 2*14
-  const larguraColuna = larguraUtil / parametros.colunas.length;
-
+  let posicaoXAtual = margemEsquerda;
   parametros.colunas.forEach((coluna, i) => {
-    doc.rect(margemEsquerda + i * larguraColuna, y, larguraColuna, 8, 'F');
-    doc.text(coluna, margemEsquerda + i * larguraColuna + 2, y + 5.5);
+    const larguraCol = largurasColunas[i];
+    doc.rect(posicaoXAtual, y, larguraCol, 8, 'F');
+    doc.text(coluna, posicaoXAtual + 2, y + 5.5);
+    posicaoXAtual += larguraCol;
   });
 
   y += 8;
@@ -95,11 +105,22 @@ export function gerarPdfGenerico(parametros: ParametrosPdf, nomeArquivo: string)
     }
 
     doc.setFontSize(8);
+    posicaoXAtual = margemEsquerda;
+
     linha.forEach((celula, i) => {
+      const larguraCol = largurasColunas[i];
       const texto = String(celula);
-      // Trunca texto se for maior que a coluna.
-      const textoTruncado = texto.length > 28 ? texto.substring(0, 25) + '...' : texto;
-      doc.text(textoTruncado, margemEsquerda + i * larguraColuna + 2, y + 5.5);
+
+      // Limita dinamicamente o número de caracteres com base no espaço da coluna para evitar sobreposição
+      // Aproximadamente 2.2mm por caractere em fonte tamanho 8.
+      const caracteresMaximos = Math.max(8, Math.floor((larguraCol - 4) / 2.2));
+      const textoTruncado =
+        texto.length > caracteresMaximos
+          ? texto.substring(0, caracteresMaximos - 3) + '...'
+          : texto;
+
+      doc.text(textoTruncado, posicaoXAtual + 2, y + 5.5);
+      posicaoXAtual += larguraCol;
     });
 
     y += 8;
