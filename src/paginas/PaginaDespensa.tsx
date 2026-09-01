@@ -5,15 +5,15 @@
  *
  * Funcionalidades:
  *  1. Registro de itens em categorias: Geladeira, Armários, Produtos de Limpeza, Higiene Pessoal, Lista de Compras.
- *  2. Envio otimizado de itens da despensa/mercado diretamente para a lista de compras (carrinho) sem estourar o limite Spark.
- *  3. Controle de quantidade restante e status (Fechado / Aberto).
- *  4. Histórico do valor pago e local da última compra.
- *  5. Geração de relatório PDF.
- *  6. Importação em massa de listas.
+ *  2. Barra de busca integrada para filtrar rapidamente os produtos na tela.
+ *  3. Envio otimizado de itens da despensa/mercado diretamente para a lista de compras (carrinho) sem estourar o limite Spark.
+ *  4. Controle de quantidade restante e status (Fechado / Aberto).
+ *  5. Histórico do valor pago e local da última compra.
+ *  6. Geração de relatório PDF e importação em massa.
  * -----------------------------------------------------------------------------
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   collection,
   onSnapshot,
@@ -44,6 +44,7 @@ import {
   Pencil,
   ShoppingCart,
   ListPlus,
+  Search,
 } from 'lucide-react';
 
 // Mapeamento de categoria para ícone correspondente.
@@ -67,6 +68,7 @@ const corCategoria: Record<string, string> = {
 export function PaginaDespensa() {
   const [itens, setItens] = useState<ItemDespensa[]>([]);
   const [filtroCategoria, setFiltroCategoria] = useState<string>('Todas');
+  const [termoBusca, setTermoBusca] = useState<string>('');
   const [modalAberto, setModalAberto] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
 
@@ -81,7 +83,6 @@ export function PaginaDespensa() {
 
   /**
    * Efeito: escuta em tempo real a coleção "despensa" no Firestore.
-   * Atualiza a lista local sempre que há mudanças (multi-usuário).
    */
   useEffect(() => {
     const cancelar = onSnapshot(collection(banco, 'despensa'), (snapshot) => {
@@ -105,11 +106,6 @@ export function PaginaDespensa() {
     return () => cancelar();
   }, []);
 
-  /**
-   * salvarItem
-   * Adiciona um novo item ou atualiza um existente na despensa.
-   * Suporta submissão via submit do formulário (compatível com mobile).
-   */
   const salvarItem = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!nome.trim()) return;
@@ -127,30 +123,21 @@ export function PaginaDespensa() {
       };
 
       if (editandoId) {
-        // Atualiza item existente.
         await updateDoc(doc(banco, 'despensa', editandoId), dados);
       } else {
-        // Adiciona novo item.
         await addDoc(collection(banco, 'despensa'), dados);
       }
 
       limparFormulario();
-
-      // Desfoca o teclado virtual no mobile
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
       }
-
       setModalAberto(false);
     } catch (erro) {
       console.error('Erro ao salvar item na despensa:', erro);
     }
   };
 
-  /**
-   * alternarStatus
-   * Alterna o status do item entre Aberto e Fechado.
-   */
   const alternarStatus = async (item: ItemDespensa) => {
     try {
       await updateDoc(doc(banco, 'despensa', item.id), {
@@ -161,10 +148,6 @@ export function PaginaDespensa() {
     }
   };
 
-  /**
-   * removerItem
-   * Remove um item da despensa.
-   */
   const removerItem = async (id: string) => {
     try {
       await deleteDoc(doc(banco, 'despensa', id));
@@ -173,10 +156,6 @@ export function PaginaDespensa() {
     }
   };
 
-  /**
-   * editarItem
-   * Carrega os dados do item no formulário para edição.
-   */
   const editarItem = (item: ItemDespensa) => {
     setEditandoId(item.id);
     setNome(item.nome);
@@ -189,10 +168,6 @@ export function PaginaDespensa() {
     setModalAberto(true);
   };
 
-  /**
-   * limparFormulario
-   * Reseta todos os campos do formulário.
-   */
   const limparFormulario = () => {
     setEditandoId(null);
     setNome('');
@@ -204,12 +179,6 @@ export function PaginaDespensa() {
     setUltimoLocal('');
   };
 
-  /**
-   * enviarParaCarrinho
-   * Envia o item diretamente para a lista de compras (carrinho_atual) usando
-   * uma escrita sob demanda, mantendo a compatibilidade e evitando leitura
-   * desnecessária que pudesse estourar o plano Spark.
-   */
   const enviarParaCarrinho = async (item: ItemDespensa) => {
     try {
       const preco = item.ultimoPreco || 0;
@@ -237,10 +206,6 @@ export function PaginaDespensa() {
     }
   };
 
-  /**
-   * importarItens
-   * Importa itens em massa para a despensa.
-   */
   const importarItens = async (itensImportados: ItemImportado[]) => {
     try {
       for (const item of itensImportados) {
@@ -260,10 +225,6 @@ export function PaginaDespensa() {
     }
   };
 
-  /**
-   * gerarPdf
-   * Gera relatório PDF da despensa.
-   */
   const gerarPdf = () => {
     const colunas = ['Item', 'Categoria', 'Qtd', 'Status', 'Último Preço', 'Local'];
     const linhas = itensFiltrados.map((i) => [
@@ -281,11 +242,14 @@ export function PaginaDespensa() {
     );
   };
 
-  // Filtra itens pela categoria selecionada.
-  const itensFiltrados =
-    filtroCategoria === 'Todas'
-      ? itens
-      : itens.filter((i) => i.categoria === filtroCategoria);
+  // Filtra itens por categoria e termo de busca digitado.
+  const itensFiltrados = useMemo(() => {
+    return itens.filter((i) => {
+      const passaCategoria = filtroCategoria === 'Todas' || i.categoria === filtroCategoria;
+      const passaBusca = i.nome.toLowerCase().includes(termoBusca.trim().toLowerCase());
+      return passaCategoria && passaBusca;
+    });
+  }, [itens, filtroCategoria, termoBusca]);
 
   const categorias = ['Todas', 'Geladeira', 'Armários', 'Produtos de Limpeza', 'Higiene Pessoal', 'Lista de Compras'];
 
@@ -320,6 +284,18 @@ export function PaginaDespensa() {
         ))}
       </div>
 
+      {/* Barra de Busca de Produtos */}
+      <div className="relative">
+        <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          type="text"
+          placeholder="Buscar produto na lista..."
+          value={termoBusca}
+          onChange={(e) => setTermoBusca(e.target.value)}
+          className="campo-entrada pl-10"
+        />
+      </div>
+
       {/* Barra de ações */}
       <div className="flex flex-wrap items-center gap-3">
         <button
@@ -345,7 +321,7 @@ export function PaginaDespensa() {
         {itensFiltrados.length === 0 ? (
           <div className="cartao text-center py-12 text-slate-400">
             <Package size={40} className="mx-auto mb-3 opacity-40" />
-            <p>Despensa vazia nesta categoria.</p>
+            <p>Nenhum produto encontrado.</p>
           </div>
         ) : (
           itensFiltrados.map((item) => (
