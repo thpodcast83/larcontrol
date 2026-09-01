@@ -503,6 +503,7 @@ export function PaginaDespensa() {
                 className="campo-entrada"
               >
                 <option value="Não informado">Selecione o mercado</option>
+                <option value="Stok Center">Stok Center</option>
                 <option value="Guarapari">Guarapari</option>
                 <option value="MaxCenter">MaxCenter</option>
                 <option value="Atacadão">Atacadão</option>
@@ -511,6 +512,7 @@ export function PaginaDespensa() {
                 <option value="Zaffari">Zaffari</option>
                 <option value="Gauchão">Gauchão</option>
                 <option value="Fort Atacadista">Fort Atacadista</option>
+                <option value="Outro">Outro</option>
               </select>
             </div>
           </div>
