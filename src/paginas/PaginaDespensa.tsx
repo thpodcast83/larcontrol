@@ -9,7 +9,7 @@
  *  3. Envio otimizado de itens da despensa/mercado diretamente para a lista de compras (carrinho) sem estourar o limite Spark.
  *  4. Controle de quantidade restante e status (Fechado / Aberto).
  *  5. Histórico do valor pago e local da última compra.
- *  6. Geração de relatório PDF estruturado em colunas corretas (Item | Categoria | Qtd | Status | Preço | Local) e importação em massa.
+ *  6. Geração de relatório PDF formatado corretamente com largura de colunas ajustada para evitar sobreposição.
  * -----------------------------------------------------------------------------
  */
 
@@ -229,7 +229,7 @@ export function PaginaDespensa() {
     const tituloRelatorio = filtroCategoria === 'Lista de Compras' ? 'Relatório - Lista de Compras' : 'Relatório de Despensa';
     const nomeArquivo = filtroCategoria === 'Lista de Compras' ? 'relatorio-lista-compras.pdf' : 'relatorio-despensa-larcontrol.pdf';
 
-    const colunas = ['Item', 'Categoria', 'Qtd', 'Status', 'Último Preço', 'Local'];
+    const colunas = ['Item', 'Categoria', 'Qtd', 'Status', 'Preço', 'Local'];
     const linhas = itensFiltrados.map((i) => [
       i.nome,
       i.categoria,
@@ -239,8 +239,11 @@ export function PaginaDespensa() {
       i.ultimoLocal,
     ]);
 
+    // Passando larguras personalizadas para as colunas (ex: Item com mais espaço para evitar sobreposição)
+    const colWidths = [140, 75, 45, 55, 60, 65];
+
     gerarPdfGenerico(
-      { titulo: tituloRelatorio, colunas, linhas },
+      { titulo: tituloRelatorio, colunas, linhas, colWidths },
       nomeArquivo
     );
   };
@@ -460,7 +463,7 @@ export function PaginaDespensa() {
                   status === 'Fechado' ? 'bg-primaria-700 text-white' : 'bg-slate-100 text-slate-500'
                 }`}
               >
-                <Lock size={16} className="inline mr-1" /> Fechado
+                <Lock size5={16} className="inline mr-1" /> Fechado
               </button>
               <button
                 type="button"
