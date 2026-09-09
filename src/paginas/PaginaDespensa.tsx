@@ -7,11 +7,12 @@
  *  1. Registro de itens em categorias: Geladeira, Armários, Produtos de Limpeza, Higiene Pessoal, Lista de Compras.
  *  2. Barra de busca integrada para filtrar rapidamente os produtos na tela.
  *  3. Envio otimizado de itens da despensa/mercado diretamente para a lista de compras (carrinho) sem estourar o limite Spark.
- *  4. Controle de quantidade restante e status (Fechado / Aberto).
+ *  4. Controle de quantidade restante e status (Fechado / Aberto) com ajuste rápido (+ e -).
  *  5. Histórico do valor pago e local da última compra.
  *  6. Geração de relatório PDF formatado corretamente com largura de colunas ajustada e cálculo correto do valor total multiplicando a quantidade pelo preço.
  * -----------------------------------------------------------------------------
  */
+
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   collection,
@@ -58,11 +59,11 @@ const iconeCategoria: Record<string, React.ReactNode> = {
 
 // Cores para cada categoria (badge).
 const corCategoria: Record<string, string> = {
-  Geladeira: 'bg-blue-100 text-blue-700',
-  Armários: 'bg-amber-100 text-amber-700',
-  'Produtos de Limpeza': 'bg-purple-100 text-purple-700',
-  'Higiene Pessoal': 'bg-rose-100 text-rose-700',
-  'Lista de Compras': 'bg-teal-100 text-teal-700',
+  Geladeira: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+  Armários: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  'Produtos de Limpeza': 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+  'Higiene Pessoal': 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
+  'Lista de Compras': 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300',
 };
 
 export function PaginaDespensa() {
@@ -150,7 +151,7 @@ export function PaginaDespensa() {
 
   // Função para alterar a quantidade rapidamente por botões + / -
   const alterarQuantidade = async (item: ItemDespensa, delta: number) => {
-    const passo = item.unidade === 'g' ? 100 : 1; // Incrementa/decrementa 100g se for gramas, ou 1 para un/kg
+    const passo = item.unidade === 'g' ? 100 : 1; 
     const novaQtd = Math.max(0, Number((item.quantidade + delta * passo).toFixed(2)));
     try {
       await updateDoc(doc(banco, 'despensa', item.id), {
@@ -281,11 +282,11 @@ export function PaginaDespensa() {
     <div className="space-y-6">
       {/* Cabeçalho */}
       <div>
-        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-          <Package className="text-primaria-700" />
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+          <Package className="text-primaria-700 dark:text-primaria-500" />
           Despensa e Higiene
         </h1>
-        <p className="text-slate-500 text-sm mt-1">
+        <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
           Controle de estoque doméstico, categorias e reposição para lista de compras.
         </p>
       </div>
@@ -300,7 +301,7 @@ export function PaginaDespensa() {
             className={`px-4 py-2 rounded-xl font-semibold text-sm whitespace-nowrap transition-all ${
               filtroCategoria === cat
                 ? 'bg-primaria-700 text-white'
-                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
             }`}
           >
             {cat}
@@ -351,92 +352,92 @@ export function PaginaDespensa() {
           itensFiltrados.map((item) => (
             <div key={item.id} className="cartao flex items-center justify-between gap-3 animar-entrada">
               <div className="flex items-center gap-3 min-w-0">
-                <div className={`p-2 rounded-lg ${corCategoria[item.categoria] || 'bg-slate-100 text-slate-700'}`}>
+                <div className={`p-2 rounded-lg ${corCategoria[item.categoria] || 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>
                   {iconeCategoria[item.categoria] || <Package size={18} />}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-semibold text-slate-900 truncate">{item.nome}</h3>
-                    <span className={`badge ${corCategoria[item.categoria] || 'bg-slate-100 text-slate-700'}`}>{item.categoria}</span>
+                    <h3 className="font-semibold text-slate-900 dark:text-white truncate">{item.nome}</h3>
+                    <span className={`badge ${corCategoria[item.categoria] || 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>{item.categoria}</span>
                   </div>
                   
-                  {/* Controles de quantidade rapida (+ e -) */}
+                  {/* Controles de quantidade rápida (+ e -) */}
                   <div className="flex items-center gap-2 mt-1">
-                    <div className="flex items-center border border-slate-200 rounded-lg bg-slate-50 overflow-hidden">
+                    <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 overflow-hidden">
                       <button
                         type="button"
                         onClick={() => alterarQuantidade(item, -1)}
-                        className="p-1 text-slate-600 hover:bg-slate-200 transition-colors"
+                        className="p-1 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
                         title="Diminuir quantidade"
                       >
                         <Minus size={14} />
                       </button>
-                      <span className="px-2.5 text-xs font-bold text-slate-800">
+                      <span className="px-2.5 text-xs font-bold text-slate-800 dark:text-slate-100">
                         {item.quantidade} {item.unidade}
                       </span>
                       <button
                         type="button"
                         onClick={() => alterarQuantidade(item, 1)}
-                        className="p-1 text-slate-600 hover:bg-slate-200 transition-colors"
+                        className="p-1 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
                         title="Aumentar quantidade"
                       >
                         <Plus size={14} />
                       </button>
+                    </div>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">• {item.status === 'Aberto' ? 'Aberto' : 'Fechado'}</span>
                   </div>
-                  <span className="text-xs text-slate-500">• {item.status === 'Aberto' ? 'Aberto' : 'Fechado'}</span>
+
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                    {formatarMoeda(item.ultimoPreco)} no {item.ultimoLocal} • {formatarDataCurta(item.ultimaCompra)}
+                  </p>
                 </div>
-
-                <p className="text-xs text-slate-400 mt-0.5">
-                  {formatarMoeda(item.ultimoPreco)} no {item.ultimoLocal} • {formatarDataCurta(item.ultimaCompra)}
-              </p>
               </div>
-            </div>
 
-            <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1">
                 {/* Botão para enviar para a Lista de Compras (Carrinho) */}
                 <button
-                    type="button"
-                    onClick={() => enviarParaCarrinho(item)}
-                    className="p-2 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
-                    title="Adicionar à Lista de Compras"
-                    aria-label="Adicionar à Lista de Compras"
+                  type="button"
+                  onClick={() => enviarParaCarrinho(item)}
+                  className="p-2 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/40 transition-colors"
+                  title="Adicionar à Lista de Compras"
+                  aria-label="Adicionar à Lista de Compras"
                 >
-                    <ShoppingCart size={18} />
+                  <ShoppingCart size={18} />
                 </button>
                 {/* Botão de alternar status */}
                 <button
-                    type="button"
-                    onClick={() => alternarStatus(item)}
-                    className={`p-2 rounded-lg transition-colors ${
-                      item.status === 'Aberto'
-                        ? 'text-green-600 hover:bg-green-50'
-                        : 'text-slate-400 hover:bg-slate-100'
+                  type="button"
+                  onClick={() => alternarStatus(item)}
+                  className={`p-2 rounded-lg transition-colors ${
+                    item.status === 'Aberto'
+                      ? 'text-green-600 hover:bg-green-50 dark:hover:bg-green-950/40'
+                      : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                   aria-label="Alternar status"
                 >
-                    {item.status === 'Aberto' ? <Unlock size={18} /> : <Lock size={18} />}
+                  {item.status === 'Aberto' ? <Unlock size={18} /> : <Lock size={18} />}
                 </button>
                 {/* Botão de editar */}
                 <button
-                    type="button"
-                    onClick={() => editarItem(item)}
-                    className="p-2 rounded-lg text-slate-400 hover:text-primaria-700 hover:bg-primaria-50 transition-colors"
-                    aria-label="Editar"
+                  type="button"
+                  onClick={() => editarItem(item)}
+                  className="p-2 rounded-lg text-slate-400 hover:text-primaria-700 hover:bg-primaria-50 dark:hover:bg-primaria-950/40 transition-colors"
+                  aria-label="Editar"
                 >
-                    <Pencil size={18} />
+                  <Pencil size={18} />
                 </button>
                 {/* Botão de remover */}
                 <button
-                    type="button"
-                    onClick={() => removerItem(item.id)}
-                    className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                    aria-label="Remover"
+                  type="button"
+                  onClick={() => removerItem(item.id)}
+                  className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+                  aria-label="Remover"
                 >
-                    <Trash2 size={18} />
+                  <Trash2 size={18} />
                 </button>
-          </div>
-          </div>
-        ))
+              </div>
+            </div>
+          ))
         )}
       </div>
 
@@ -505,7 +506,7 @@ export function PaginaDespensa() {
                 type="button"
                 onClick={() => setStatus('Fechado')}
                 className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                  status === 'Fechado' ? 'bg-primaria-700 text-white' : 'bg-slate-100 text-slate-500'
+                  status === 'Fechado' ? 'bg-primaria-700 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
                 }`}
               >
                 <Lock size={16} className="inline mr-1" /> Fechado
@@ -514,7 +515,7 @@ export function PaginaDespensa() {
                 type="button"
                 onClick={() => setStatus('Aberto')}
                 className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                  status === 'Aberto' ? 'bg-primaria-700 text-white' : 'bg-slate-100 text-slate-500'
+                  status === 'Aberto' ? 'bg-primaria-700 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
                 }`}
               >
                 <Unlock size={16} className="inline mr-1" /> Aberto
