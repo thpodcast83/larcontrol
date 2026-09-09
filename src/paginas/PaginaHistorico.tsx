@@ -5,7 +5,7 @@
  * -----------------------------------------------------------------------------
  */
 import React, { useEffect, useState, useMemo } from 'react';
-import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit, addDoc, serverTimestamp } from 'firebase/firestore';
 import { banco } from '@/firebase';
 import { formatarMoeda } from '@/utils/utilFormato';
 import {
@@ -17,6 +17,7 @@ import {
   MapPin,
   ChevronDown,
   ChevronUp,
+  Package,
 } from 'lucide-react';
 
 interface ProdutoHistorico {
@@ -87,6 +88,24 @@ export function PaginaHistorico() {
 
     return () => cancelar();
   }, []);
+
+  const adicionarDespensaDoHistorico = async (produto: ProdutoHistorico, compra: CompraHistorico) => {
+    try {
+      await addDoc(collection(banco, 'despensa'), {
+        nome: produto.nome,
+        categoria: 'Armários',
+        quantidade: produto.quantidade || 1,
+        unidade: produto.unidade || 'un',
+        status: 'Fechado',
+        ultimoPreco: produto.precoUnitario || 0,
+        ultimoLocal: compra.mercado || 'Não informado',
+        ultimaCompra: serverTimestamp(),
+      });
+      alert(`"${produto.nome}" foi adicionado à despensa com sucesso!`);
+    } catch (erro) {
+      console.error('Erro ao enviar item para a despensa:', erro);
+    }
+  };
 
   // --- Algoritmo Dashboard: Comparativo Inteligente de Preços ---
   const comparativos = useMemo(() => {
@@ -261,17 +280,27 @@ export function PaginaHistorico() {
                             <p className="text-slate-400">
                               {p.quantidade} {p.unidade} × {formatarMoeda(p.precoUnitario)}
                             </p>
-                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
                           <span className="font-bold text-slate-700 dark:text-slate-300">
                             {formatarMoeda(p.subtotal)}
                           </span>
+                          <button
+                            type="button"
+                            onClick={() => adicionarDespensaDoHistorico(p, compra)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/40 transition-colors"
+                            title="Adicionar à Despensa"
+                          >
+                            <Package size={16} />
+                          </button>
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    ))}
                   </div>
-                )}
-              </div>
-            );
+                </div>
+              )}
+            </div>
+          );
           })
         )}
       </div>
