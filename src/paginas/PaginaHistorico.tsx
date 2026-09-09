@@ -18,6 +18,9 @@ import {
   ChevronDown,
   ChevronUp,
   Package,
+  Search,
+  Filter,
+  X,
 } from 'lucide-react';
 
 interface ProdutoHistorico {
@@ -53,6 +56,11 @@ interface ComparativoProduto {
 export function PaginaHistorico() {
   const [compras, setCompras] = useState<CompraHistorico[]>([]);
   const [compraExpandida, setCompraExpandida] = useState<string | null>(null);
+
+  // --- Estados para os Filtros ---
+  const [filtroTexto, setFiltroTexto] = useState('');
+  const [filtroMercado, setFiltroMercado] = useState('');
+  const [filtroData, setFiltroData] = useState('');
 
   useEffect(() => {
     const q = query(
@@ -139,12 +147,38 @@ export function PaginaHistorico() {
               dataAnterior: compraAnt.dataCompra,
             });
           }
-          break; // Compara com o registro imediatamente anterior encontrado
+          break;
         }
       }
     });
 
     return analises;
+  }, [compras]);
+
+  // --- Lógica de Filtragem do Histórico ---
+  const comprasFiltradas = useMemo(() => {
+    return compras.filter((compra) => {
+      // Filtro por Estabelecimento (Mercado)
+      const matchMercado = filtroMercado
+        ? compra.mercado.toLowerCase().includes(filtroMercado.toLowerCase())
+        : true;
+
+      // Filtro por Data
+      const matchData = filtroData ? compra.dataCompra === filtroData : true;
+
+      // Filtro por Produto (verifica se algum produto da compra contém o texto digitado)
+      const matchProduto = filtroTexto
+        ? compra.produtos.some((p) => p.nome.toLowerCase().includes(filtroTexto.toLowerCase()))
+        : true;
+
+      return matchMercado && matchData && matchProduto;
+    });
+  }, [compras, filtroTexto, filtroMercado, filtroData]);
+
+  // Lista única de mercados para preencher um select/opções se desejar
+  const listaMercados = useMemo(() => {
+    const mercados = new Set(compras.map((c) => c.mercado).filter(Boolean));
+    return Array.from(mercados);
   }, [compras]);
 
   return (
@@ -209,17 +243,64 @@ export function PaginaHistorico() {
         )}
       </div>
 
-      {/* --- HISTÓRICO DE COMPRAS CONCLUÍDAS --- */}
+      {/* --- HISTÓRICO DE COMPRAS CONCLUÍDAS & FILTROS --- */}
       <div className="space-y-4">
-        <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Compras Guardadas</h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Compras Guardadas</h2>
+          
+          {/* Botão de Limpar Filtros se houver algo ativo */}
+          {(filtroTexto || filtroMercado || filtroData) && (
+            <button
+              onClick={() => { setFiltroTexto(''); setFiltroMercado(''); setFiltroData(''); }}
+              className="text-xs text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-1 self-start sm:self-auto"
+            >
+              <X size={14} /> Limpar filtros
+            </button>
+          )}
+        </div>
 
-        {compras.length === 0 ? (
+        {/* Barra de Filtros */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Filtrar por produto..."
+              value={filtroTexto}
+              onChange={(e) => setFiltroTexto(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
+            />
+          </div>
+
+          <div className="relative">
+            <MapPin size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Filtrar por estabelecimento..."
+              value={filtroMercado}
+              onChange={(e) => setFiltroMercado(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
+            />
+          </div>
+
+          <div className="relative">
+            <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="date"
+              value={filtroData}
+              onChange={(e) => setFiltroData(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
+            />
+          </div>
+        </div>
+
+        {comprasFiltradas.length === 0 ? (
           <div className="cartao text-center py-12 text-slate-400">
             <History size={40} className="mx-auto mb-3 opacity-40" />
-            <p>Nenhuma compra finalizada no histórico ainda.</p>
+            <p>Nenhuma compra encontrada com os filtros informados.</p>
           </div>
         ) : (
-          compras.map((compra) => {
+          comprasFiltradas.map((compra) => {
             const aberta = compraExpandida === compra.id;
             return (
               <div key={compra.id} className="cartao overflow-hidden transition-all p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
@@ -280,27 +361,27 @@ export function PaginaHistorico() {
                             <p className="text-slate-400">
                               {p.quantidade} {p.unidade} × {formatarMoeda(p.precoUnitario)}
                             </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-700 dark:text-slate-300">
+                              {formatarMoeda(p.subtotal)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => adicionarDespensaDoHistorico(p, compra)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/40 transition-colors"
+                              title="Adicionar à Despensa"
+                            >
+                              <Package size={16} />
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-700 dark:text-slate-300">
-                            {formatarMoeda(p.subtotal)}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => adicionarDespensaDoHistorico(p, compra)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/40 transition-colors"
-                            title="Adicionar à Despensa"
-                          >
-                            <Package size={16} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-          );
+                )}
+              </div>
+            );
           })
         )}
       </div>
