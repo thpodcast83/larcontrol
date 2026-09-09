@@ -12,7 +12,6 @@
  *  6. Geração de relatório PDF formatado corretamente com largura de colunas ajustada e cálculo correto do valor total multiplicando a quantidade pelo preço.
  * -----------------------------------------------------------------------------
  */
-
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   collection,
@@ -33,6 +32,7 @@ import type { ItemImportado } from '@/utils/utilParser';
 import {
   Package,
   Plus,
+  Minus,
   Trash2,
   FileText,
   Refrigerator,
@@ -148,6 +148,19 @@ export function PaginaDespensa() {
     }
   };
 
+  // Função para alterar a quantidade rapidamente por botões + / -
+  const alterarQuantidade = async (item: ItemDespensa, delta: number) => {
+    const passo = item.unidade === 'g' ? 100 : 1; // Incrementa/decrementa 100g se for gramas, ou 1 para un/kg
+    const novaQtd = Math.max(0, Number((item.quantidade + delta * passo).toFixed(2)));
+    try {
+      await updateDoc(doc(banco, 'despensa', item.id), {
+        quantidade: novaQtd,
+      });
+    } catch (erro) {
+      console.error('Erro ao atualizar quantidade:', erro);
+    }
+  };
+
   const removerItem = async (id: string) => {
     try {
       await deleteDoc(doc(banco, 'despensa', id));
@@ -239,7 +252,6 @@ export function PaginaDespensa() {
       i.ultimoLocal,
     ]);
 
-    // Multiplica a quantidade pelo preço de cada produto para calcular o valor total correto da listagem
     const valorTotal = itensFiltrados.reduce((acc, i) => {
       const preco = i.ultimoPreco || 0;
       const qtd = i.quantidade || 1;
@@ -255,7 +267,6 @@ export function PaginaDespensa() {
     );
   };
 
-  // Filtra itens por categoria e termo de busca digitado.
   const itensFiltrados = useMemo(() => {
     return itens.filter((i) => {
       const passaCategoria = filtroCategoria === 'Todas' || i.categoria === filtroCategoria;
@@ -338,67 +349,94 @@ export function PaginaDespensa() {
           </div>
         ) : (
           itensFiltrados.map((item) => (
-            <div key={item.id} className="cartao flex items-center gap-3 animar-entrada">
-              <div className={`p-2 rounded-lg ${corCategoria[item.categoria] || 'bg-slate-100 text-slate-700'}`}>
-                {iconeCategoria[item.categoria] || <Package size={18} />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="font-semibold text-slate-900 truncate">{item.nome}</h3>
-                  <span className={`badge ${corCategoria[item.categoria] || 'bg-slate-100 text-slate-700'}`}>{item.categoria}</span>
+            <div key={item.id} className="cartao flex items-center justify-between gap-3 animar-entrada">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`p-2 rounded-lg ${corCategoria[item.categoria] || 'bg-slate-100 text-slate-700'}`}>
+                  {iconeCategoria[item.categoria] || <Package size={18} />}
                 </div>
-                <p className="text-sm text-slate-500 mt-0.5">
-                  {item.quantidade} {item.unidade} • {item.status === 'Aberto' ? 'Aberto' : 'Fechado'}
-                </p>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-semibold text-slate-900 truncate">{item.nome}</h3>
+                    <span className={`badge ${corCategoria[item.categoria] || 'bg-slate-100 text-slate-700'}`}>{item.categoria}</span>
+                  </div>
+                  
+                  {/* Controles de quantidade rapida (+ e -) */}
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className="flex items-center border border-slate-200 rounded-lg bg-slate-50 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => alterarQuantidade(item, -1)}
+                        className="p-1 text-slate-600 hover:bg-slate-200 transition-colors"
+                        title="Diminuir quantidade"
+                      >
+                        <Minus size={14} />
+                      </button>
+                      <span className="px-2.5 text-xs font-bold text-slate-800">
+                        {item.quantidade} {item.unidade}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => alterarQuantidade(item, 1)}
+                        className="p-1 text-slate-600 hover:bg-slate-200 transition-colors"
+                        title="Aumentar quantidade"
+                      >
+                        <Plus size={14} />
+                      </button>
+                  </div>
+                  <span className="text-xs text-slate-500">• {item.status === 'Aberto' ? 'Aberto' : 'Fechado'}</span>
+                </div>
+
                 <p className="text-xs text-slate-400 mt-0.5">
                   {formatarMoeda(item.ultimoPreco)} no {item.ultimoLocal} • {formatarDataCurta(item.ultimaCompra)}
-                </p>
+              </p>
               </div>
-              <div className="flex items-center gap-1">
+            </div>
+
+            <div className="flex items-center gap-1">
                 {/* Botão para enviar para a Lista de Compras (Carrinho) */}
                 <button
-                  type="button"
-                  onClick={() => enviarParaCarrinho(item)}
-                  className="p-2 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
-                  title="Adicionar à Lista de Compras"
-                  aria-label="Adicionar à Lista de Compras"
+                    type="button"
+                    onClick={() => enviarParaCarrinho(item)}
+                    className="p-2 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
+                    title="Adicionar à Lista de Compras"
+                    aria-label="Adicionar à Lista de Compras"
                 >
-                  <ShoppingCart size={18} />
+                    <ShoppingCart size={18} />
                 </button>
                 {/* Botão de alternar status */}
                 <button
-                  type="button"
-                  onClick={() => alternarStatus(item)}
-                  className={`p-2 rounded-lg transition-colors ${
-                    item.status === 'Aberto'
-                      ? 'text-green-600 hover:bg-green-50'
-                      : 'text-slate-400 hover:bg-slate-100'
+                    type="button"
+                    onClick={() => alternarStatus(item)}
+                    className={`p-2 rounded-lg transition-colors ${
+                      item.status === 'Aberto'
+                        ? 'text-green-600 hover:bg-green-50'
+                        : 'text-slate-400 hover:bg-slate-100'
                   }`}
                   aria-label="Alternar status"
                 >
-                  {item.status === 'Aberto' ? <Unlock size={18} /> : <Lock size={18} />}
+                    {item.status === 'Aberto' ? <Unlock size={18} /> : <Lock size={18} />}
                 </button>
                 {/* Botão de editar */}
                 <button
-                  type="button"
-                  onClick={() => editarItem(item)}
-                  className="p-2 rounded-lg text-slate-400 hover:text-primaria-700 hover:bg-primaria-50 transition-colors"
-                  aria-label="Editar"
+                    type="button"
+                    onClick={() => editarItem(item)}
+                    className="p-2 rounded-lg text-slate-400 hover:text-primaria-700 hover:bg-primaria-50 transition-colors"
+                    aria-label="Editar"
                 >
-                  <Pencil size={18} />
+                    <Pencil size={18} />
                 </button>
                 {/* Botão de remover */}
                 <button
-                  type="button"
-                  onClick={() => removerItem(item.id)}
-                  className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                  aria-label="Remover"
+                    type="button"
+                    onClick={() => removerItem(item.id)}
+                    className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                    aria-label="Remover"
                 >
-                  <Trash2 size={18} />
+                    <Trash2 size={18} />
                 </button>
-              </div>
-            </div>
-          ))
+          </div>
+          </div>
+        ))
         )}
       </div>
 
@@ -520,7 +558,7 @@ export function PaginaDespensa() {
             {editandoId ? 'Salvar alterações' : 'Adicionar à despensa'}
           </button>
         </form>
-      </Modal>
-    </div>
+    </Modal>
+  </div>
   );
 }
