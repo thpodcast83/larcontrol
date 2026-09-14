@@ -10,6 +10,7 @@
  *  4. Controle de quantidade restante e status (Fechado / Aberto) com ajuste rápido (+ e -).
  *  5. Histórico do valor pago e local da última compra.
  *  6. Geração de relatório PDF formatado corretamente com largura de colunas ajustada e cálculo correto do valor total multiplicando a quantidade pelo preço.
+ *  7. Resumo consolidado por contexto de produto com contagem e somatório de quantidades.
  * -----------------------------------------------------------------------------
  */
 
@@ -64,6 +65,16 @@ const corCategoria: Record<string, string> = {
   'Produtos de Limpeza': 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
   'Higiene Pessoal': 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
   'Lista de Compras': 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300',
+};
+
+// Função simples para normalizar o nome do produto (remover acentos, maiúsculas e padronizar)
+const normalizarNome = (nome: string) => {
+  return nome
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+    .replace(/[^a-z0-9\s]/g, '') // Remove caracteres especiais
+    .trim();
 };
 
 export function PaginaDespensa() {
@@ -268,6 +279,29 @@ export function PaginaDespensa() {
     );
   };
 
+  // Agrupamento por contexto similar de nome para contagem geral
+  const itensAgrupadosPorContexto = useMemo(() => {
+    const mapa: Record<string, { nomeExemplar: string; total: number; unidades: Set<string> }> = {};
+
+    itens.forEach((item) => {
+      const norm = normalizarNome(item.nome);
+      // Agrupa pela primeira palavra principal do nome para capturar contextos similares
+      const chave = norm.split(' ')[0] || norm; 
+
+      if (!mapa[chave]) {
+        mapa[chave] = {
+          nomeExemplar: item.nome,
+          total: 0,
+          unidades: new Set(),
+        };
+      }
+      mapa[chave].total += item.quantidade || 1;
+      mapa[chave].unidades.add(item.unidade);
+    });
+
+    return Object.values(mapa);
+  }, [itens]);
+
   const itensFiltrados = useMemo(() => {
     return itens.filter((i) => {
       const passaCategoria = filtroCategoria === 'Todas' || i.categoria === filtroCategoria;
@@ -289,6 +323,29 @@ export function PaginaDespensa() {
         <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
           Controle de estoque doméstico, categorias e reposição para lista de compras.
         </p>
+      </div>
+
+      {/* Resumo Geral por Contexto de Produto */}
+      <div className="cartao p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+        <h3 className="text-md font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+          <Package size={18} className="text-primaria-700 dark:text-primaria-500" />
+          Resumo Geral por Contexto na Despensa
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+          {itensAgrupadosPorContexto.map((grupo, index) => (
+            <div 
+              key={index} 
+              className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm"
+            >
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate capitalize">
+                {grupo.nomeExemplar}
+              </span>
+              <span className="badge bg-primaria-100 text-primaria-700 dark:bg-primaria-900/40 dark:text-primaria-300 font-bold whitespace-nowrap ml-2">
+                {grupo.total} {Array.from(grupo.unidades).join(', ')}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Filtros de categoria */}
@@ -559,7 +616,7 @@ export function PaginaDespensa() {
             {editandoId ? 'Salvar alterações' : 'Adicionar à despensa'}
           </button>
         </form>
-    </Modal>
-  </div>
+      </Modal>
+    </div>
   );
 }
