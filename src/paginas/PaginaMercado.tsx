@@ -1,5 +1,5 @@
 /**
- * PaginaMercado.tsx (Atualizado - Com persistência de teto/desconto e melhorias de UX)
+ * PaginaMercado.tsx (Estilo Calculadora / PDV Rápido)
  * -----------------------------------------------------------------------------
  */
 import React, { useEffect, useState, useMemo } from 'react';
@@ -36,6 +36,8 @@ import {
   Save,
   Tag,
   PlusCircle,
+  Delete,
+  Percent,
 } from 'lucide-react';
 
 function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
@@ -43,7 +45,6 @@ function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
   const [unidadeEditada, setUnidadeEditada] = useState<'un' | 'kg' | 'g'>(item.unidade || 'un');
   const [precoEditado, setPrecoEditado] = useState(item.precoUnitario ? item.precoUnitario.toString() : '');
 
-  // Sincroniza se houver atualização externa
   useEffect(() => {
     setQtdEditada(item.quantidade?.toString() || '1');
     setUnidadeEditada(item.unidade || 'un');
@@ -92,17 +93,17 @@ function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
   };
 
   return (
-    <div className="cartao flex flex-col gap-3 border border-slate-200 dark:border-slate-800 p-4 rounded-xl bg-white dark:bg-slate-900 shadow-sm">
+    <div className="flex flex-col gap-3 border border-slate-700/60 p-4 rounded-xl bg-slate-800/90 text-slate-100 shadow-md">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="font-semibold text-slate-900 dark:text-slate-100">{item.nome}</h3>
+          <h3 className="font-semibold text-slate-100">{item.nome}</h3>
           <p className="text-xs text-slate-400">Adicionado por {item.adicionadoPor}</p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-sm text-teal-600 dark:text-teal-400 font-bold">
+          <span className="text-sm text-teal-400 font-bold">
             Subtotal: {formatarMoeda(subtotalCalculado)}
           </span>
-          <button onClick={removerItem} className="text-slate-400 hover:text-red-600 transition-colors" title="Excluir item">
+          <button onClick={removerItem} className="text-slate-400 hover:text-red-400 transition-colors" title="Excluir item">
             <Trash2 size={18} />
           </button>
         </div>
@@ -115,7 +116,7 @@ function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
             <button
               type="button"
               onClick={() => alterarQuantidade(-1)}
-              className="bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 p-2 rounded-lg border border-slate-200 dark:border-slate-700 transition-all"
+              className="bg-slate-700 hover:bg-slate-600 text-slate-200 p-2 rounded-lg border border-slate-600 transition-all"
               title="Diminuir"
             >
               <Minus size={14} />
@@ -125,12 +126,12 @@ function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
               inputMode="decimal"
               value={qtdEditada}
               onChange={(e) => setQtdEditada(e.target.value)}
-              className="campo-entrada text-sm py-1.5 px-2 text-center"
+              className="bg-slate-900 border border-slate-700 text-slate-100 text-sm rounded-lg py-1.5 px-2 text-center w-full focus:outline-none focus:border-teal-500"
             />
             <button
               type="button"
               onClick={() => alterarQuantidade(1)}
-              className="bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 p-2 rounded-lg border border-slate-200 dark:border-slate-700 transition-all"
+              className="bg-slate-700 hover:bg-slate-600 text-slate-200 p-2 rounded-lg border border-slate-600 transition-all"
               title="Aumentar"
             >
               <Plus size={14} />
@@ -147,7 +148,7 @@ function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
               setUnidadeEditada(novaUn);
               handleSalvarNoCarrinho(qNum, pNum, novaUn);
             }}
-            className="campo-entrada text-sm py-1.5 px-2"
+            className="bg-slate-900 border border-slate-700 text-slate-100 text-sm rounded-lg py-1.5 px-2 w-full focus:outline-none focus:border-teal-500"
           >
             <option value="un">Unidade (un)</option>
             <option value="kg">Quilo (kg)</option>
@@ -162,14 +163,14 @@ function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
             inputMode="decimal"
             value={precoEditado}
             onChange={(e) => setPrecoEditado(e.target.value)}
-            className="campo-entrada text-sm py-1.5 px-2"
+            className="bg-slate-900 border border-slate-700 text-slate-100 text-sm rounded-lg py-1.5 px-2 w-full focus:outline-none focus:border-teal-500"
           />
         </div>
 
         <div className="flex items-end h-full pt-2 sm:pt-0">
           <button
             onClick={salvarManual}
-            className="botao-primario text-xs w-full py-2"
+            className="bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs w-full py-2.5 rounded-lg transition-all"
             type="button"
           >
             Atualizar
@@ -186,7 +187,6 @@ export function PaginaMercado() {
   const [itensCarrinho, setItensCarrinho] = useState<ItemCarrinho[]>([]);
   const [modo, setModo] = useState<'rancho' | 'extras'>('rancho');
 
-  // Persistência simples com localStorage para teto e desconto
   const [teto, setTeto] = useState<number>(() => {
     const salvo = localStorage.getItem('@mercado_teto');
     return salvo ? parseFloat(salvo) : 0;
@@ -211,17 +211,25 @@ export function PaginaMercado() {
   const [carregandoCatalogo, setCarregandoCatalogo] = useState(true);
   const [termoBusca, setTermoBusca] = useState('');
 
-  const [novoNome, setNovoNome] = useState('');
-  const [novaQtd, setNovaQtd] = useState('1');
-  const [novaUnidade, setNovaUnidade] = useState<'un' | 'kg' | 'g'>('un');
-  const [novoPreco, setNovoPreco] = useState('');
+  // Estados estilo Calculadora PDV
+  const [focoAtivo, setFocoAtivo] = useState<'quantidade' | 'preco'>('quantidade');
+  const [calcQuantidade, setCalcQuantidade] = useState('1');
+  const [calcPreco, setCalcPreco] = useState('');
+  const [modoKg, setModoKg] = useState(false);
 
-  // Salvar teto no localStorage sempre que mudar
+  // Estados para Modais de Atalho da Calculadora
+  const [modalNomeAberto, setModalNomeAberto] = useState(false);
+  const [calcNomeItem, setCalcNomeItem] = useState('');
+
+  const [modalDescontoAberto, setModalDescontoAberto] = useState(false);
+  const [tipoDesconto, setTipoDesconto] = useState<'percent' | 'real'>('percent');
+  const [valorDescontoModal, setValorDescontoModal] = useState('0,00');
+
+  // Salvar teto e desconto no localStorage
   useEffect(() => {
     localStorage.setItem('@mercado_teto', teto.toString());
   }, [teto]);
 
-  // Salvar desconto no localStorage sempre que mudar
   useEffect(() => {
     localStorage.setItem('@mercado_desconto', descontoGlobal);
   }, [descontoGlobal]);
@@ -304,6 +312,11 @@ export function PaginaMercado() {
     return itensModo.reduce((acc, i) => acc + (i.subtotal || 0), 0);
   }, [itensModo]);
 
+  // Cálculo da soma atual do item sendo digitado na calculadora
+  const qCalcNum = parseFloat(calcQuantidade.replace(',', '.')) || 0;
+  const pCalcNum = parseFloat(calcPreco.replace(',', '.')) || 0;
+  let somaItemAtual = modoKg ? (qCalcNum / 1000) * pCalcNum : qCalcNum * pCalcNum;
+
   const dGlobalNum = parseFloat(descontoGlobal.replace(',', '.')) || 0;
   const totalGasto = Math.max(0, totalBruto - dGlobalNum);
   const saldo = teto - totalGasto;
@@ -339,19 +352,43 @@ export function PaginaMercado() {
     setTermoBusca('');
   };
 
-  const adicionarManual = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!novoNome.trim()) return;
+  // Teclado da Calculadora: Inserir Dígito ou Botão
+  const handleDigitoCalc = (digito: string) => {
+    if (focoAtivo === 'quantidade') {
+      if (digito === 'C') {
+        setCalcQuantidade('1');
+      } else if (digito === 'DEL') {
+        setCalcQuantidade((prev) => (prev.length > 1 ? prev.slice(0, -1) : '0'));
+      } else {
+        setCalcQuantidade((prev) => (prev === '0' && digito !== ',' ? digito : prev + digito));
+      }
+    } else {
+      if (digito === 'C') {
+        setCalcPreco('0');
+      } else if (digito === 'DEL') {
+        setCalcPreco((prev) => (prev.length > 1 ? prev.slice(0, -1) : '0'));
+      } else {
+        setCalcPreco((prev) => (prev === '0' && digito !== ',' ? digito : prev + digito));
+      }
+    }
+  };
 
-    setModalCarrinhoAberto(false);
-    const qtd = parseFloat(novaQtd.replace(',', '.')) || 1;
-    const preco = parseFloat(novoPreco.replace(',', '.')) || 0;
-    const subtotal = novaUnidade === 'g' ? (qtd / 1000) * preco : qtd * preco;
+  // Confirmar adição do item via Calculadora PDV
+  const confirmarItemCalculadora = async () => {
+    if (!calcNomeItem.trim()) {
+      setModalNomeAberto(true);
+      return;
+    }
+
+    const qtd = parseFloat(calcQuantidade.replace(',', '.')) || 1;
+    const preco = parseFloat(calcPreco.replace(',', '.')) || 0;
+    const unidade = modoKg ? 'kg' : 'un';
+    const subtotal = unidade === 'kg' ? (qtd / 1000) * preco : qtd * preco;
 
     await addDoc(collection(banco, 'carrinho_atual'), {
-      nome: novoNome.trim(),
+      nome: calcNomeItem.trim(),
       quantidade: qtd,
-      unidade: novaUnidade,
+      unidade,
       precoUnitario: preco,
       subtotal,
       modo,
@@ -360,9 +397,11 @@ export function PaginaMercado() {
       adicionadoEm: serverTimestamp(),
     });
 
-    setNovoNome('');
-    setNovaQtd('1');
-    setNovoPreco('');
+    // Resetar campos da calculadora para o próximo item
+    setCalcNomeItem('');
+    setCalcQuantidade('1');
+    setCalcPreco('');
+    setFocoAtivo('quantidade');
   };
 
   const limparCarrinho = async () => {
@@ -424,17 +463,18 @@ export function PaginaMercado() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
           <ShoppingCart className="text-teal-600" />
-          Mercado / Carrinho
+          Mercado / Calculadora PDV
         </h1>
         <p className="text-slate-500 text-sm mt-1">
-          Gerencie sua compra em tempo real, controle o orçamento e adicione itens com facilidade.
+          Faça suas compras usando o teclado rápido estilo PDV com visor de soma em tempo real.
         </p>
       </div>
 
+      {/* Configurações Iniciais da Compra */}
       <div className="cartao p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
-            <label className="text-xs font-semibold text-slate-500 mb-1 block flex items-center gap-1">
+            <label className="text-xs font-semibold text-slate-500 mb-1 flex items-center gap-1">
               <Calendar size={14} /> Data da Compra
             </label>
             <input
@@ -446,7 +486,7 @@ export function PaginaMercado() {
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-slate-500 mb-1 block flex items-center gap-1">
+            <label className="text-xs font-semibold text-slate-500 mb-1 flex items-center gap-1">
               <Tag size={14} /> Nome do Mercado
             </label>
             <input
@@ -459,7 +499,7 @@ export function PaginaMercado() {
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-slate-500 mb-1 block flex items-center gap-1">
+            <label className="text-xs font-semibold text-slate-500 mb-1 flex items-center gap-1">
               <MapPin size={14} /> Localização
             </label>
             <div className="flex gap-2">
@@ -543,12 +583,13 @@ export function PaginaMercado() {
         </div>
       </div>
 
-      <div className="cartao-destaque bg-gradient-to-r from-teal-800 to-teal-950 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between p-5 rounded-2xl shadow-lg gap-4">
+      {/* Visor Geral da Compra */}
+      <div className="bg-gradient-to-r from-slate-900 to-slate-950 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between p-5 rounded-2xl shadow-lg gap-4 border border-slate-800">
         <div>
-          <span className="text-teal-200 text-xs font-semibold uppercase tracking-wider">
-            Total no Carrinho ({modo === 'rancho' ? 'Rancho' : 'Gastos Extras'})
+          <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">
+            SOMA TOTAL ({modo === 'rancho' ? 'Rancho' : 'Gastos Extras'})
           </span>
-          <h2 className="text-3xl font-extrabold text-white mt-0.5">
+          <h2 className="text-4xl font-extrabold text-white mt-0.5">
             {formatarMoeda(totalGasto)}
           </h2>
           {dGlobalNum > 0 && (
@@ -560,22 +601,22 @@ export function PaginaMercado() {
 
         <div className="flex flex-wrap items-center gap-3">
           {teto > 0 && (
-            <div className="text-right bg-teal-900/60 px-4 py-2 rounded-xl border border-teal-700/50">
-              <span className="text-xs text-teal-300 block">Saldo Restante</span>
-              <span className={`text-sm font-bold ${saldo >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+            <div className="text-right bg-slate-800 px-4 py-2 rounded-xl border border-slate-700">
+              <span className="text-xs text-slate-400 block">Saldo Restante</span>
+              <span className={`text-sm font-bold ${saldo >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                 {formatarMoeda(saldo)}
               </span>
             </div>
           )}
 
-          <span className="badge bg-teal-700/60 text-teal-100 text-xs px-3 py-2 rounded-xl font-medium">
+          <span className="bg-slate-800 text-slate-200 text-xs px-3 py-2 rounded-xl font-medium border border-slate-700">
             {itensModo.length} itens
           </span>
 
           {itensModo.length > 0 && (
             <button
               onClick={limparCarrinho}
-              className="bg-red-600/80 hover:bg-red-600 text-white p-2.5 rounded-xl text-xs transition-all"
+              className="bg-red-900/60 hover:bg-red-800 text-red-200 p-2.5 rounded-xl text-xs transition-all border border-red-700/50"
               title="Limpar carrinho"
             >
               <Trash2 size={16} />
@@ -603,9 +644,125 @@ export function PaginaMercado() {
         </button>
       </div>
 
-      <div className="relative">
+      {/* --- ESTILO CALCULADORA PDV --- */}
+      <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-xl border border-slate-800 space-y-4">
+        
+        {/* Topo do Bloco da Calculadora: Nome do Item Atual e Toggle R$/kg */}
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-slate-300">Item:</span>
+            <button
+              onClick={() => setModalNomeAberto(true)}
+              className="text-teal-400 hover:underline font-semibold text-sm bg-slate-800 px-3 py-1 rounded-lg border border-slate-700 flex items-center gap-1.5"
+            >
+              {calcNomeItem ? calcNomeItem : '+ Adicionar um nome'}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400">R$/kg</span>
+            <button
+              type="button"
+              onClick={() => setModoKg(!modoKg)}
+              className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors ${modoKg ? 'bg-emerald-500' : 'bg-slate-700'}`}
+            >
+              <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${modoKg ? 'translate-x-6' : 'translate-x-0'}`} />
+            </button>
+          </div>
+        </div>
+
+        {/* Campos de Quantidade e Preço Selecionáveis */}
+        <div className="grid grid-cols-2 gap-4">
+          <div
+            onClick={() => setFocoAtivo('quantidade')}
+            className={`p-3 rounded-xl border cursor-pointer transition-all ${
+              focoAtivo === 'quantidade' ? 'border-teal-400 bg-slate-800/80 shadow-md' : 'border-slate-800 bg-slate-900'
+            }`}
+          >
+            <span className="text-[11px] text-slate-400 block">Quantidade {modoKg ? 'g' : 'un'}</span>
+            <div className="text-xl font-bold text-teal-300 flex items-center justify-between mt-1">
+              <span>{calcQuantidade}</span>
+              <span className="text-xs font-normal text-slate-400">{modoKg ? 'g' : 'un'}</span>
+            </div>
+          </div>
+
+          <div
+            onClick={() => setFocoAtivo('preco')}
+            className={`p-3 rounded-xl border cursor-pointer transition-all ${
+              focoAtivo === 'preco' ? 'border-teal-400 bg-slate-800/80 shadow-md' : 'border-slate-800 bg-slate-900'
+            }`}
+          >
+            <span className="text-[11px] text-slate-400 block">Preço Unitário</span>
+            <div className="text-xl font-bold text-slate-100 flex items-center justify-between mt-1">
+              <span>{calcPreco ? formatarMoeda(parseFloat(calcPreco.replace(',', '.')) || 0) : 'R$ 0,00'}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Subtotal Parcial do Item Atual */}
+        <div className="text-center bg-slate-800/50 py-2 rounded-xl border border-slate-800">
+          <span className="text-xs text-slate-400">Subtotal do item: </span>
+          <span className="text-sm font-bold text-emerald-400">{formatarMoeda(somaItemAtual)}</span>
+        </div>
+
+        {/* Botões de Atalho Rápido Superior na Calculadora */}
+        <div className="grid grid-cols-4 gap-2">
+          <button
+            onClick={() => setModalNomeAberto(true)}
+            className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 transition-all h-14"
+          >
+            <Plus size={16} className="text-teal-400 mb-0.5" />
+            <span>Nome</span>
+          </button>
+
+          <button
+            onClick={() => alert('Função de foto em breve')}
+            className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 transition-all h-14"
+          >
+            <Plus size={16} className="text-teal-400 mb-0.5" />
+            <span>📷 Foto</span>
+          </button>
+
+          <button
+            onClick={() => setModalDescontoAberto(true)}
+            className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 transition-all h-14"
+          >
+            <Plus size={16} className="text-teal-400 mb-0.5" />
+            <span>Desconto</span>
+          </button>
+
+          <button
+            onClick={confirmarItemCalculadora}
+            className="flex items-center justify-center rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition-all h-14 shadow-lg border border-emerald-500"
+            title="Confirmar e Adicionar Item"
+          >
+            <CheckCircle size={24} />
+          </button>
+        </div>
+
+        {/* Grade do Teclado Numérico da Calculadora */}
+        <div className="grid grid-cols-4 gap-2 pt-2">
+          {['1', '2', '3', 'DEL', '4', '5', '6', 'C', '7', '8', '9', '-', ',', '0', ',99'].map((tecla) => (
+            <button
+              key={tecla}
+              onClick={() => {
+                if (tecla === 'DEL') handleDigitoCalc('DEL');
+                else if (tecla === ',99') {
+                  if (focoAtivo === 'preco') setCalcPreco('99');
+                } else handleDigitoCalc(tecla);
+              }}
+              className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 font-semibold text-lg py-3.5 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-95"
+            >
+              {tecla === 'DEL' ? <Delete size={20} /> : tecla}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Barra de Busca de Produtos do Banco de Dados */}
+      <div className="relative pt-2">
         <label className="text-xs font-semibold text-slate-500 mb-1 block">
-          Buscar no banco de dados para colocar no carrinho:
+          Ou buscar no banco de dados para colocar no carrinho:
         </label>
         <div className="relative">
           <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -646,85 +803,110 @@ export function PaginaMercado() {
         )}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <button onClick={() => setModalCarrinhoAberto(true)} className="botao-primario" type="button">
-          <Plus size={18} /> Adicionar ao Carrinho
-        </button>
-
+      <div className="flex justify-end pt-2">
         <button
           onClick={finalizarCompra}
           disabled={salvandoCompra || itensModo.length === 0}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-md transition-all flex items-center gap-2 disabled:opacity-50"
+          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-6 rounded-xl shadow-md transition-all flex items-center gap-2 disabled:opacity-50 w-full sm:w-auto justify-center"
           type="button"
         >
-          <CheckCircle size={18} />
+          <CheckCircle size={20} />
           {salvandoCompra ? 'Salvando...' : 'Finalizar e Guardar Compra'}
         </button>
       </div>
 
-      <div className="space-y-3">
+      {/* Lista de Itens no Carrinho */}
+      <div className="space-y-3 pt-4">
         <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300">
           Itens no Carrinho ({itensModo.length})
         </h2>
         {itensModo.length === 0 ? (
           <div className="cartao text-center py-12 text-slate-400 rounded-xl border border-dashed border-slate-300 dark:border-slate-800">
             <p>Nenhum produto no carrinho no momento.</p>
-            <p className="text-xs mt-1">Use a barra de pesquisa acima para buscar do banco ou clique em "Adicionar ao Carrinho".</p>
+            <p className="text-xs mt-1">Use a calculadora acima ou o teclado para registrar seus itens.</p>
           </div>
         ) : (
           itensModo.map((item) => <ItemCarrinhoCard key={item.id} item={item} />)
         )}
       </div>
 
-      <Modal aberto={modalCarrinhoAberto} onFechar={() => setModalCarrinhoAberto(false)} titulo="Adicionar Item ao Carrinho">
-        <form onSubmit={adicionarManual} className="space-y-4">
+      {/* Modal para Adicionar Nome do Item */}
+      <Modal aberto={modalNomeAberto} onFechar={() => setModalNomeAberto(false)} titulo="Adicionar um nome">
+        <div className="space-y-4">
           <div>
             <label className="rotulo">Nome do produto</label>
             <input
               type="text"
-              value={novoNome}
-              onChange={(e) => setNovoNome(e.target.value)}
+              value={calcNomeItem}
+              onChange={(e) => setCalcNomeItem(e.target.value)}
+              placeholder="Ex: Arroz Tio João 5kg"
               className="campo-entrada"
-              required
+              autoFocus
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="rotulo">Quantidade</label>
-              <input
-                type="text"
-                value={novaQtd}
-                onChange={(e) => setNovaQtd(e.target.value)}
-                className="campo-entrada"
-                required
-              />
-            </div>
-            <div>
-              <label className="rotulo">Unidade</label>
-              <select
-                value={novaUnidade}
-                onChange={(e) => setNovaUnidade(e.target.value as 'un' | 'kg' | 'g')}
-                className="campo-entrada"
-              >
-                <option value="un">Unidade (un)</option>
-                <option value="kg">Quilo (kg)</option>
-                <option value="g">Grama (g)</option>
-              </select>
-            </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setModalNomeAberto(false)}
+              className="flex-1 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 py-2.5 rounded-xl font-semibold"
+            >
+              Cancela
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalNomeAberto(false)}
+              className="flex-1 bg-teal-600 hover:bg-teal-700 text-white py-2.5 rounded-xl font-semibold"
+            >
+              Confirma
+            </button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Modal para Desconto do Item */}
+      <Modal aberto={modalDescontoAberto} onFechar={() => setModalDescontoAberto(false)} titulo="Desconto do item">
+        <div className="space-y-4">
+          <div className="flex bg-slate-200 dark:bg-slate-800 p-1 rounded-xl">
+            <button
+              onClick={() => setTipoDesconto('percent')}
+              className={`flex-1 py-1.5 rounded-lg text-sm font-semibold ${tipoDesconto === 'percent' ? 'bg-white dark:bg-slate-700 text-teal-600 shadow-sm' : 'text-slate-500'}`}
+            >
+              %
+            </button>
+            <button
+              onClick={() => setTipoDesconto('real')}
+              className={`flex-1 py-1.5 rounded-lg text-sm font-semibold ${tipoDesconto === 'real' ? 'bg-white dark:bg-slate-700 text-teal-600 shadow-sm' : 'text-slate-500'}`}
+            >
+              R$
+            </button>
+          </div>
+
           <div>
-            <label className="rotulo">Preço Unitário (R$)</label>
             <input
               type="text"
-              value={novoPreco}
-              onChange={(e) => setNovoPreco(e.target.value)}
-              className="campo-entrada"
+              value={valorDescontoModal}
+              onChange={(e) => setValorDescontoModal(e.target.value)}
+              className="campo-entrada text-center text-xl font-bold"
             />
           </div>
-          <button type="submit" className="botao-primario w-full">
-            Adicionar ao Carrinho
-          </button>
-        </form>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setModalDescontoAberto(false)}
+              className="flex-1 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 py-2.5 rounded-xl font-semibold"
+            >
+              Cancela
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalDescontoAberto(false)}
+              className="flex-1 bg-teal-600 hover:bg-teal-700 text-white py-2.5 rounded-xl font-semibold"
+            >
+              Confirma
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
