@@ -213,7 +213,7 @@ export function PaginaMercado() {
 
   // Estados estilo Calculadora PDV
   const [focoAtivo, setFocoAtivo] = useState<'quantidade' | 'preco'>('quantidade');
-  const [calcQuantidade, setCalcQuantidade] = useState('1');
+  const [calcQuantidade, setCalcQuantidade] = useState('0');
   const [calcPreco, setCalcPreco] = useState('');
   const [modoKg, setModoKg] = useState(false);
 
@@ -356,7 +356,7 @@ export function PaginaMercado() {
   const handleDigitoCalc = (digito: string) => {
     if (focoAtivo === 'quantidade') {
       if (digito === 'C') {
-        setCalcQuantidade('1');
+        setCalcQuantidade('0');
       } else if (digito === 'DEL') {
         setCalcQuantidade((prev) => (prev.length > 1 ? prev.slice(0, -1) : '0'));
       } else {
@@ -399,7 +399,7 @@ export function PaginaMercado() {
 
     // Resetar campos da calculadora para o próximo item
     setCalcNomeItem('');
-    setCalcQuantidade('1');
+    setCalcQuantidade('0');
     setCalcPreco('');
     setFocoAtivo('quantidade');
   };
@@ -681,7 +681,37 @@ export function PaginaMercado() {
           >
             <span className="text-[11px] text-slate-400 block">Quantidade {modoKg ? 'g' : 'un'}</span>
             <div className="text-xl font-bold text-teal-300 flex items-center justify-between mt-1">
-              <span>{calcQuantidade}</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const qNum = parseFloat(calcQuantidade.replace(',', '.')) || 0;
+                    const passo = modoKg ? 100 : 1;
+                    const novaQtd = Math.max(0, qNum - passo);
+                    setCalcQuantidade(novaQtd.toString());
+                  }}
+                  className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-2 py-0.5 rounded-lg text-sm border border-slate-600 transition-all"
+                  title="Diminuir"
+                >
+                  -
+                </button>
+                <span>{calcQuantidade}</span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const qNum = parseFloat(calcQuantidade.replace(',', '.')) || 0;
+                    const passo = modoKg ? 100 : 1;
+                    const novaQtd = qNum + passo;
+                    setCalcQuantidade(novaQtd.toString());
+                  }}
+                  className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-2 py-0.5 rounded-lg text-sm border border-slate-600 transition-all"
+                  title="Aumentar"
+                >
+                  +
+                </button>
+              </div>
               <span className="text-xs font-normal text-slate-400">{modoKg ? 'g' : 'un'}</span>
             </div>
           </div>
@@ -746,10 +776,19 @@ export function PaginaMercado() {
             <button
               key={tecla}
               onClick={() => {
-                if (tecla === 'DEL') handleDigitoCalc('DEL');
-                else if (tecla === ',99') {
-                  if (focoAtivo === 'preco') setCalcPreco('99');
-                } else handleDigitoCalc(tecla);
+                if (tecla === 'DEL') {
+                  handleDigitoCalc('DEL');
+                } else if (tecla === ',99') {
+                  if (focoAtivo === 'preco') {
+                    const parteInteira = calcPreco.includes(',') ? calcPreco.split(',')[0] : (calcPreco || '0');
+                    setCalcPreco(parteInteira === '0' || !parteInteira ? '0,99' : `${parteInteira},99`);
+                  } else {
+                    const parteInteiraQtd = calcQuantidade.includes(',') ? calcQuantidade.split(',')[0] : (calcQuantidade || '0');
+                    setCalcQuantidade(parteInteiraQtd === '0' || !parteInteiraQtd ? '0,99' : `${parteInteiraQtd},99`);
+                  }
+                } else {
+                  handleDigitoCalc(tecla);
+                }
               }}
               className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 font-semibold text-lg py-3.5 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-95"
             >
