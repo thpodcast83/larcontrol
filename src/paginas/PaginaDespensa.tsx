@@ -1,7 +1,7 @@
 /**
  * PaginaDespensa.tsx
  * -----------------------------------------------------------------------------
- * Módulo de Controle de Despensa e Estoque do LarControl.
+ * Módulo de Controle de Despensa e Estoque do LarControl (Versão Tabela Limpa).
  * -----------------------------------------------------------------------------
  */
 
@@ -38,37 +38,15 @@ import {
   ShoppingCart,
   ListPlus,
   Search,
-  Layers,
 } from 'lucide-react';
 
-// Mapeamento de categoria para ícone correspondente.
-const iconeCategoria: Record<string, React.ReactNode> = {
-  Geladeira: <Refrigerator size={18} />,
-  Armários: <Archive size={18} />,
-  'Produtos de Limpeza': <SprayCan size={18} />,
-  'Higiene Pessoal': <Sparkles size={18} />,
-  'Lista de Compras': <ListPlus size={18} />,
-};
-
-// Cores para cada categoria (badge).
+// Cores para as tags de categoria.
 const corCategoria: Record<string, string> = {
   Geladeira: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
   Armários: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
   'Produtos de Limpeza': 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
   'Higiene Pessoal': 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
   'Lista de Compras': 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300',
-};
-
-// Normaliza o nome para agrupar contextos similares (remove marcas, pesos e detalhes do final)
-const normalizarContexto = (nome: string) => {
-  return nome
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // Remove acentos
-    .replace(/[0-9]+([.,][0-9]+)?\s*(kg|g|ml|l|un|pack|c\/[0-9]+)/gi, '') // Remove medidas comuns
-    .replace(/[^a-z\s]/g, '') // Mantém apenas letras e espaços
-    .trim()
-    .split(/\s+/)[0] || nome.trim(); // Pega a primeira palavra principal (ex: "arroz", "acucar", "leite")
 };
 
 export function PaginaDespensa() {
@@ -132,9 +110,6 @@ export function PaginaDespensa() {
       }
 
       limparFormulario();
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
       setModalAberto(false);
     } catch (erro) {
       console.error('Erro ao salvar item na despensa:', erro);
@@ -152,7 +127,7 @@ export function PaginaDespensa() {
   };
 
   const alterarQuantidade = async (item: ItemDespensa, delta: number) => {
-    const passo = item.unidade === 'g' ? 100 : 1; 
+    const passo = item.unidade === 'g' ? 100 : 1;
     const novaQtd = Math.max(0, Number((item.quantidade + delta * passo).toFixed(2)));
     try {
       await updateDoc(doc(banco, 'despensa', item.id), {
@@ -215,7 +190,7 @@ export function PaginaDespensa() {
         adicionadoEm: serverTimestamp(),
       });
 
-      alert(`"${item.nome}" foi enviado para a lista de compras (Carrinho)!`);
+      alert(`"${item.nome}" foi enviado para a lista de compras!`);
     } catch (erro) {
       console.error('Erro ao enviar item para o carrinho:', erro);
     }
@@ -260,7 +235,7 @@ export function PaginaDespensa() {
       return acc + (preco * qtd);
     }, 0);
 
-    const totalTexto = `Valor Total dos Itens Listados: ${formatarMoeda(valorTotal)}`;
+    const totalTexto = `Valor Total: ${formatarMoeda(valorTotal)}`;
     const colWidths = [140, 75, 45, 55, 60, 65];
 
     gerarPdfGenerico(
@@ -268,37 +243,6 @@ export function PaginaDespensa() {
       nomeArquivo
     );
   };
-
-  // Agrupamento inteligente por contexto (mostrando apenas os que se repetem ou totalizando)
-  const itensAgrupados = useMemo(() => {
-    const mapa: Record<string, { termo: number; registros: string[]; qtdTotal: number; unidade: string }> = {};
-
-    itens.forEach((item) => {
-      const chave = normalizarContexto(item.nome);
-      if (!mapa[chave]) {
-        mapa[chave] = {
-          termo: 0,
-          registros: [],
-          qtdTotal: 0,
-          unidade: item.unidade,
-        };
-      }
-      mapa[chave].termo += 1;
-      mapa[chave].registros.push(item.nome);
-      mapa[chave].qtdTotal += Number(item.quantidade) || 0;
-    });
-
-    // Filtra para exibir apenas os que aparecem mais de 1 vez (ou ajuste conforme preferência)
-    return Object.entries(mapa)
-      .filter(([_, dados]) => dados.termo > 1)
-      .map(([chave, dados]) => ({
-        contexto: chave.toUpperCase(),
-        ocorrencias: dados.termo,
-        qtdTotal: Number(dados.qtdTotal.toFixed(2)),
-        unidade: dados.unidade,
-        exemplos: dados.registros.join(', '),
-      }));
-  }, [itens]);
 
   const itensFiltrados = useMemo(() => {
     return itens.filter((i) => {
@@ -319,194 +263,174 @@ export function PaginaDespensa() {
           Despensa e Higiene
         </h1>
         <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
-          Controle de estoque doméstico, categorias e reposição para lista de compras.
+          Controle de estoque doméstico em formato de tabela limpa.
         </p>
       </div>
 
-      {/* Resumo Compacto de Itens Repetidos por Contexto */}
-      {itensAgrupados.length > 0 && (
-        <div className="cartao p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-            <Layers size={16} className="text-primaria-700 dark:text-primaria-500" />
-            Itens com Variações e Repetições na Despensa
-          </h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-600 dark:text-slate-300">
-              <thead className="border-b border-slate-200 dark:border-slate-700 font-semibold text-slate-700 dark:text-slate-200">
-                <tr>
-                  <th className="pb-2">Contexto / Produto</th>
-                  <th className="pb-2">Vezes Encontrado</th>
-                  <th className="pb-2">Quantidade Total Acumulada</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-700/50">
-                {itensAgrupados.map((grupo, idx) => (
-                  <tr key={idx} className="hover:bg-slate-100/50 dark:hover:bg-slate-800/50">
-                    <td className="py-2.5 font-medium text-slate-900 dark:text-white">
-                      {grupo.contexto} <span className="text-[10px] text-slate-400 font-normal block">({grupo.exemplos})</span>
-                    </td>
-                    <td className="py-2.5">
-                      <span className="badge bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 font-bold">
-                        {grupo.ocorrencias}x cadastros
-                      </span>
-                    </td>
-                    <td className="py-2.5 font-bold text-primaria-700 dark:text-primaria-400">
-                      {grupo.qtdTotal} {grupo.unidade}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      {/* Controles: Filtros, Busca e Ações */}
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+        {/* Filtros de categoria */}
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {categorias.map((cat) => (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => setFiltroCategoria(cat)}
+              className={`px-3 py-1.5 rounded-lg font-medium text-xs whitespace-nowrap transition-all ${
+                filtroCategoria === cat
+                  ? 'bg-primaria-700 text-white'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
         </div>
-      )}
 
-      {/* Filtros de categoria */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {categorias.map((cat) => (
+        {/* Botões de Ação Rápida */}
+        <div className="flex items-center gap-2">
           <button
-            key={cat}
             type="button"
-            onClick={() => setFiltroCategoria(cat)}
-            className={`px-4 py-2 rounded-xl font-semibold text-sm whitespace-nowrap transition-all ${
-              filtroCategoria === cat
-                ? 'bg-primaria-700 text-white'
-                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
-            }`}
+            onClick={() => {
+              limparFormulario();
+              setModalAberto(true);
+            }}
+            className="botao-primario text-xs py-2"
           >
-            {cat}
+            <Plus size={16} />
+            Novo Item
           </button>
-        ))}
+          <BotaoImportar onImportar={importarItens} />
+          <button type="button" onClick={gerarPdf} className="botao-secundario text-xs py-2">
+            <FileText size={16} />
+            PDF
+          </button>
+        </div>
       </div>
 
-      {/* Barra de Busca de Produtos */}
+      {/* Barra de Busca */}
       <div className="relative">
         <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
         <input
           type="text"
-          placeholder="Buscar produto na lista..."
+          placeholder="Pesquisar produto na despensa..."
           value={termoBusca}
           onChange={(e) => setTermoBusca(e.target.value)}
-          className="campo-entrada pl-10"
+          className="campo-entrada pl-10 text-sm py-2"
         />
       </div>
 
-      {/* Barra de ações */}
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={() => {
-            limparFormulario();
-            setModalAberto(true);
-          }}
-          className="botao-primario"
-        >
-          <Plus size={18} />
-          Adicionar item
-        </button>
-        <BotaoImportar onImportar={importarItens} />
-        <button type="button" onClick={gerarPdf} className="botao-secundario">
-          <FileText size={18} />
-          {filtroCategoria === 'Lista de Compras' ? 'Exportar Lista PDF' : 'Exportar PDF'}
-        </button>
-      </div>
-
-      {/* Lista de itens */}
-      <div className="space-y-3">
-        {itensFiltrados.length === 0 ? (
-          <div className="cartao text-center py-12 text-slate-400">
-            <Package size={40} className="mx-auto mb-3 opacity-40" />
-            <p>Nenhum produto encontrado.</p>
-          </div>
-        ) : (
-          itensFiltrados.map((item) => (
-            <div key={item.id} className="cartao flex items-center justify-between gap-3 animar-entrada">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className={`p-2 rounded-lg ${corCategoria[item.categoria] || 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>
-                  {iconeCategoria[item.categoria] || <Package size={18} />}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-semibold text-slate-900 dark:text-white truncate">{item.nome}</h3>
-                    <span className={`badge ${corCategoria[item.categoria] || 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>{item.categoria}</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-2 mt-1">
-                    <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 overflow-hidden">
-                      <button
-                        type="button"
-                        onClick={() => alterarQuantidade(item, -1)}
-                        className="p-1 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-                        title="Diminuir quantidade"
-                      >
-                        <Minus size={14} />
-                      </button>
-                      <span className="px-2.5 text-xs font-bold text-slate-800 dark:text-slate-100">
-                        {item.quantidade} {item.unidade}
+      {/* Tabela Limpa de Produtos */}
+      <div className="cartao overflow-hidden p-0 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
+            <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-xs uppercase font-semibold text-slate-700 dark:text-slate-200">
+              <tr>
+                <th className="px-4 py-3">Produto</th>
+                <th className="px-4 py-3">Categoria</th>
+                <th className="px-4 py-3">Quantidade</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Último Preço / Local</th>
+                <th className="px-4 py-3 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+              {itensFiltrados.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-12 text-slate-400">
+                    <Package size={36} className="mx-auto mb-2 opacity-40" />
+                    <p className="text-sm">Nenhum produto encontrado.</p>
+                  </td>
+                </tr>
+              ) : (
+                itensFiltrados.map((item) => (
+                  <tr key={item.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                    <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">
+                      {item.nome}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`badge text-xs ${corCategoria[item.categoria] || 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>
+                        {item.categoria}
                       </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => alterarQuantidade(item, -1)}
+                          className="p-1 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors"
+                          title="Diminuir"
+                        >
+                          <Minus size={12} />
+                        </button>
+                        <span className="font-bold text-xs text-slate-800 dark:text-slate-100 min-w-[45px] text-center">
+                          {item.quantidade} {item.unidade}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => alterarQuantidade(item, 1)}
+                          className="p-1 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors"
+                          title="Aumentar"
+                        >
+                          <Plus size={12} />
+                        </button>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
                       <button
                         type="button"
-                        onClick={() => alterarQuantidade(item, 1)}
-                        className="p-1 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-                        title="Aumentar quantidade"
+                        onClick={() => alternarStatus(item)}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors ${
+                          item.status === 'Aberto'
+                            ? 'bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-300'
+                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                        }`}
                       >
-                        <Plus size={14} />
+                        {item.status === 'Aberto' ? <Unlock size={12} /> : <Lock size={12} />}
+                        {item.status}
                       </button>
-                    </div>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">• {item.status === 'Aberto' ? 'Aberto' : 'Fechado'}</span>
-                  </div>
-
-                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                    {formatarMoeda(item.ultimoPreco)} no {item.ultimoLocal} • {formatarDataCurta(item.ultimaCompra)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => enviarParaCarrinho(item)}
-                  className="p-2 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/40 transition-colors"
-                  title="Adicionar à Lista de Compras"
-                  aria-label="Adicionar à Lista de Compras"
-                >
-                  <ShoppingCart size={18} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => alternarStatus(item)}
-                  className={`p-2 rounded-lg transition-colors ${
-                    item.status === 'Aberto'
-                      ? 'text-green-600 hover:bg-green-50 dark:hover:bg-green-950/40'
-                      : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                  aria-label="Alternar status"
-                >
-                  {item.status === 'Aberto' ? <Unlock size={18} /> : <Lock size={18} />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => editarItem(item)}
-                  className="p-2 rounded-lg text-slate-400 hover:text-primaria-700 hover:bg-primaria-50 dark:hover:bg-primaria-950/40 transition-colors"
-                  aria-label="Editar"
-                >
-                  <Pencil size={18} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => removerItem(item.id)}
-                  className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
-                  aria-label="Remover"
-                >
-                  <Trash2 size={18} />
-                </button>
-              </div>
-            </div>
-          ))
-        )}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
+                      <span className="font-medium text-slate-700 dark:text-slate-300">{formatarMoeda(item.ultimoPreco)}</span>
+                      <span className="block text-[10px] text-slate-400">{item.ultimoLocal} • {formatarDataCurta(item.ultimaCompra)}</span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => enviarParaCarrinho(item)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/40 transition-colors"
+                          title="Enviar para Lista de Compras"
+                        >
+                          <ShoppingCart size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => editarItem(item)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-primaria-700 hover:bg-primaria-50 dark:hover:bg-primaria-950/40 transition-colors"
+                          title="Editar"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removerItem(item.id)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+                          title="Remover"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* Modal de adicionar/editar item */}
+      {/* Modal de Adicionar / Editar */}
       <Modal
         aberto={modalAberto}
         onFechar={() => setModalAberto(false)}
@@ -517,7 +441,7 @@ export function PaginaDespensa() {
             <label className="rotulo">Nome do item</label>
             <input
               type="text"
-              placeholder="Ex: Leite integral ou Papel Higiênico"
+              placeholder="Ex: Arroz Integral 1kg"
               value={nome}
               onChange={(e) => setNome(e.target.value)}
               className="campo-entrada"
@@ -570,20 +494,20 @@ export function PaginaDespensa() {
               <button
                 type="button"
                 onClick={() => setStatus('Fechado')}
-                className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                  status === 'Fechado' ? 'bg-primaria-700 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                className={`flex-1 py-2 rounded-xl font-semibold text-xs transition-all ${
+                  status === 'Fechado' ? 'bg-primaria-700 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
                 }`}
               >
-                <Lock size={16} className="inline mr-1" /> Fechado
+                <Lock size={14} className="inline mr-1" /> Fechado
               </button>
               <button
                 type="button"
                 onClick={() => setStatus('Aberto')}
-                className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                  status === 'Aberto' ? 'bg-primaria-700 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                className={`flex-1 py-2 rounded-xl font-semibold text-xs transition-all ${
+                  status === 'Aberto' ? 'bg-primaria-700 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
                 }`}
               >
-                <Unlock size={16} className="inline mr-1" /> Aberto
+                <Unlock size={14} className="inline mr-1" /> Aberto
               </button>
             </div>
           </div>
