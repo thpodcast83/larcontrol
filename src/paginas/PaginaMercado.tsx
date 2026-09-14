@@ -1,5 +1,5 @@
 /**
- * PaginaMercado.tsx (Atualizado - Focado apenas no Carrinho e Finalização)
+ * PaginaMercado.tsx (Atualizado - Com persistência de teto/desconto e melhorias de UX)
  * -----------------------------------------------------------------------------
  */
 import React, { useEffect, useState, useMemo } from 'react';
@@ -43,6 +43,13 @@ function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
   const [unidadeEditada, setUnidadeEditada] = useState<'un' | 'kg' | 'g'>(item.unidade || 'un');
   const [precoEditado, setPrecoEditado] = useState(item.precoUnitario ? item.precoUnitario.toString() : '');
 
+  // Sincroniza se houver atualização externa
+  useEffect(() => {
+    setQtdEditada(item.quantidade?.toString() || '1');
+    setUnidadeEditada(item.unidade || 'un');
+    setPrecoEditado(item.precoUnitario?.toString() || '');
+  }, [item]);
+
   const qNum = parseFloat(qtdEditada.replace(',', '.')) || 0;
   const pNum = parseFloat(precoEditado.replace(',', '.')) || 0;
 
@@ -51,29 +58,33 @@ function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
     subtotalCalculado = (qNum / 1000) * pNum;
   }
 
-  const handleSalvarNoCarrinho = async (novaQtdValor: number) => {
-    let novoSubtotal = novaQtdValor * pNum;
-    if (unidadeEditada === 'g') {
-      novoSubtotal = (novaQtdValor / 1000) * pNum;
+  const handleSalvarNoCarrinho = async (novaQtdValor: number, novoPrecoValor: number, novaUnidadeValor: 'un' | 'kg' | 'g') => {
+    let novoSubtotal = novaQtdValor * novoPrecoValor;
+    if (novaUnidadeValor === 'g') {
+      novoSubtotal = (novaQtdValor / 1000) * novoPrecoValor;
     }
 
-    await updateDoc(doc(banco, 'carrinho_atual', item.id), {
-      quantidade: novaQtdValor,
-      unidade: unidadeEditada,
-      precoUnitario: pNum,
-      subtotal: novoSubtotal,
-    });
+    try {
+      await updateDoc(doc(banco, 'carrinho_atual', item.id), {
+        quantidade: novaQtdValor,
+        unidade: novaUnidadeValor,
+        precoUnitario: novoPrecoValor,
+        subtotal: novoSubtotal,
+      });
+    } catch (err) {
+      console.error('Erro ao atualizar item:', err);
+    }
   };
 
   const alterarQuantidade = (delta: number) => {
     const passo = unidadeEditada === 'kg' ? 0.1 : 1;
     const novaQtd = Math.max(0, parseFloat((qNum + delta * passo).toFixed(2)));
     setQtdEditada(novaQtd.toString());
-    handleSalvarNoCarrinho(novaQtd);
+    handleSalvarNoCarrinho(novaQtd, pNum, unidadeEditada);
   };
 
   const salvarManual = async () => {
-    await handleSalvarNoCarrinho(qNum);
+    await handleSalvarNoCarrinho(qNum, pNum, unidadeEditada);
   };
 
   const removerItem = async () => {
@@ -81,7 +92,7 @@ function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
   };
 
   return (
-    <div className="cartao flex flex-col gap-3 border border-slate-200 dark:border-slate-800 p-4 rounded-xl">
+    <div className="cartao flex flex-col gap-3 border border-slate-200 dark:border-slate-800 p-4 rounded-xl bg-white dark:bg-slate-900 shadow-sm">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="font-semibold text-slate-900 dark:text-slate-100">{item.nome}</h3>
@@ -131,7 +142,11 @@ function ItemCarrinhoCard({ item }: { item: ItemCarrinho }) {
           <label className="text-[10px] text-slate-400 block">Unidade</label>
           <select
             value={unidadeEditada}
-            onChange={(e) => setUnidadeEditada(e.target.value as 'un' | 'kg' | 'g')}
+            onChange={(e) => {
+              const novaUn = e.target.value as 'un' | 'kg' | 'g';
+              setUnidadeEditada(novaUn);
+              handleSalvarNoCarrinho(qNum, pNum, novaUn);
+            }}
             className="campo-entrada text-sm py-1.5 px-2"
           >
             <option value="un">Unidade (un)</option>
@@ -171,7 +186,11 @@ export function PaginaMercado() {
   const [itensCarrinho, setItensCarrinho] = useState<ItemCarrinho[]>([]);
   const [modo, setModo] = useState<'rancho' | 'extras'>('rancho');
 
-  const [teto, setTeto] = useState<number>(0);
+  // Persistência simples com localStorage para teto e desconto
+  const [teto, setTeto] = useState<number>(() => {
+    const salvo = localStorage.getItem('@mercado_teto');
+    return salvo ? parseFloat(salvo) : 0;
+  });
   const [editandoTeto, setEditandoTeto] = useState(false);
   const [tetoInput, setTetoInput] = useState('');
 
@@ -180,7 +199,10 @@ export function PaginaMercado() {
   );
   const [mercado, setMercado] = useState('');
   const [localizacao, setLocalizacao] = useState('');
-  const [descontoGlobal, setDescontoGlobal] = useState('');
+  
+  const [descontoGlobal, setDescontoGlobal] = useState<string>(() => {
+    return localStorage.getItem('@mercado_desconto') || '';
+  });
   
   const [modalCarrinhoAberto, setModalCarrinhoAberto] = useState(false);
   const [salvandoCompra, setSalvandoCompra] = useState(false);
@@ -193,6 +215,16 @@ export function PaginaMercado() {
   const [novaQtd, setNovaQtd] = useState('1');
   const [novaUnidade, setNovaUnidade] = useState<'un' | 'kg' | 'g'>('un');
   const [novoPreco, setNovoPreco] = useState('');
+
+  // Salvar teto no localStorage sempre que mudar
+  useEffect(() => {
+    localStorage.setItem('@mercado_teto', teto.toString());
+  }, [teto]);
+
+  // Salvar desconto no localStorage sempre que mudar
+  useEffect(() => {
+    localStorage.setItem('@mercado_desconto', descontoGlobal);
+  }, [descontoGlobal]);
 
   useEffect(() => {
     const q = query(collection(banco, 'carrinho_atual'), orderBy('adicionadoEm', 'desc'));
@@ -378,6 +410,7 @@ export function PaginaMercado() {
       setMercado('');
       setLocalizacao('');
       setDescontoGlobal('');
+      localStorage.removeItem('@mercado_desconto');
     } catch (erro) {
       console.error('Erro ao finalizar compra:', erro);
       alert('Erro ao finalizar compra.');
