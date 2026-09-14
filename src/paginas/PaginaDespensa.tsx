@@ -2,15 +2,6 @@
  * PaginaDespensa.tsx
  * -----------------------------------------------------------------------------
  * Módulo de Controle de Despensa e Estoque do LarControl.
- *
- * Funcionalidades:
- *  1. Registro de itens em categorias: Geladeira, Armários, Produtos de Limpeza, Higiene Pessoal, Lista de Compras.
- *  2. Barra de busca integrada para filtrar rapidamente os produtos na tela.
- *  3. Envio otimizado de itens da despensa/mercado diretamente para a lista de compras (carrinho) sem estourar o limite Spark.
- *  4. Controle de quantidade restante e status (Fechado / Aberto) com ajuste rápido (+ e -).
- *  5. Histórico do valor pago e local da última compra.
- *  6. Geração de relatório PDF formatado corretamente com largura de colunas ajustada e cálculo correto do valor total multiplicando a quantidade pelo preço.
- *  7. Resumo consolidado por contexto de produto com contagem e somatório de quantidades.
  * -----------------------------------------------------------------------------
  */
 
@@ -47,6 +38,7 @@ import {
   ShoppingCart,
   ListPlus,
   Search,
+  Layers,
 } from 'lucide-react';
 
 // Mapeamento de categoria para ícone correspondente.
@@ -67,14 +59,16 @@ const corCategoria: Record<string, string> = {
   'Lista de Compras': 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300',
 };
 
-// Função simples para normalizar o nome do produto (remover acentos, maiúsculas e padronizar)
-const normalizarNome = (nome: string) => {
+// Normaliza o nome para agrupar contextos similares (remove marcas, pesos e detalhes do final)
+const normalizarContexto = (nome: string) => {
   return nome
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '') // Remove acentos
-    .replace(/[^a-z0-9\s]/g, '') // Remove caracteres especiais
-    .trim();
+    .replace(/[0-9]+([.,][0-9]+)?\s*(kg|g|ml|l|un|pack|c\/[0-9]+)/gi, '') // Remove medidas comuns
+    .replace(/[^a-z\s]/g, '') // Mantém apenas letras e espaços
+    .trim()
+    .split(/\s+/)[0] || nome.trim(); // Pega a primeira palavra principal (ex: "arroz", "acucar", "leite")
 };
 
 export function PaginaDespensa() {
@@ -93,9 +87,6 @@ export function PaginaDespensa() {
   const [ultimoPreco, setUltimoPreco] = useState('');
   const [ultimoLocal, setUltimoLocal] = useState('');
 
-  /**
-   * Efeito: escuta em tempo real a coleção "despensa" no Firestore.
-   */
   useEffect(() => {
     const cancelar = onSnapshot(collection(banco, 'despensa'), (snapshot) => {
       const lista: ItemDespensa[] = [];
@@ -160,7 +151,6 @@ export function PaginaDespensa() {
     }
   };
 
-  // Função para alterar a quantidade rapidamente por botões + / -
   const alterarQuantidade = async (item: ItemDespensa, delta: number) => {
     const passo = item.unidade === 'g' ? 100 : 1; 
     const novaQtd = Math.max(0, Number((item.quantidade + delta * passo).toFixed(2)));
@@ -279,27 +269,35 @@ export function PaginaDespensa() {
     );
   };
 
-  // Agrupamento por contexto similar de nome para contagem geral
-  const itensAgrupadosPorContexto = useMemo(() => {
-    const mapa: Record<string, { nomeExemplar: string; total: number; unidades: Set<string> }> = {};
+  // Agrupamento inteligente por contexto (mostrando apenas os que se repetem ou totalizando)
+  const itensAgrupados = useMemo(() => {
+    const mapa: Record<string, { termo: number; registros: string[]; qtdTotal: number; unidade: string }> = {};
 
     itens.forEach((item) => {
-      const norm = normalizarNome(item.nome);
-      // Agrupa pela primeira palavra principal do nome para capturar contextos similares
-      const chave = norm.split(' ')[0] || norm; 
-
+      const chave = normalizarContexto(item.nome);
       if (!mapa[chave]) {
         mapa[chave] = {
-          nomeExemplar: item.nome,
-          total: 0,
-          unidades: new Set(),
+          termo: 0,
+          registros: [],
+          qtdTotal: 0,
+          unidade: item.unidade,
         };
       }
-      mapa[chave].total += item.quantidade || 1;
-      mapa[chave].unidades.add(item.unidade);
+      mapa[chave].termo += 1;
+      mapa[chave].registros.push(item.nome);
+      mapa[chave].qtdTotal += Number(item.quantidade) || 0;
     });
 
-    return Object.values(mapa);
+    // Filtra para exibir apenas os que aparecem mais de 1 vez (ou ajuste conforme preferência)
+    return Object.entries(mapa)
+      .filter(([_, dados]) => dados.termo > 1)
+      .map(([chave, dados]) => ({
+        contexto: chave.toUpperCase(),
+        ocorrencias: dados.termo,
+        qtdTotal: Number(dados.qtdTotal.toFixed(2)),
+        unidade: dados.unidade,
+        exemplos: dados.registros.join(', '),
+      }));
   }, [itens]);
 
   const itensFiltrados = useMemo(() => {
@@ -325,28 +323,43 @@ export function PaginaDespensa() {
         </p>
       </div>
 
-      {/* Resumo Geral por Contexto de Produto */}
-      <div className="cartao p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
-        <h3 className="text-md font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-          <Package size={18} className="text-primaria-700 dark:text-primaria-500" />
-          Resumo Geral por Contexto na Despensa
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-          {itensAgrupadosPorContexto.map((grupo, index) => (
-            <div 
-              key={index} 
-              className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm"
-            >
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate capitalize">
-                {grupo.nomeExemplar}
-              </span>
-              <span className="badge bg-primaria-100 text-primaria-700 dark:bg-primaria-900/40 dark:text-primaria-300 font-bold whitespace-nowrap ml-2">
-                {grupo.total} {Array.from(grupo.unidades).join(', ')}
-              </span>
-            </div>
-          ))}
+      {/* Resumo Compacto de Itens Repetidos por Contexto */}
+      {itensAgrupados.length > 0 && (
+        <div className="cartao p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+            <Layers size={16} className="text-primaria-700 dark:text-primaria-500" />
+            Itens com Variações e Repetições na Despensa
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-600 dark:text-slate-300">
+              <thead className="border-b border-slate-200 dark:border-slate-700 font-semibold text-slate-700 dark:text-slate-200">
+                <tr>
+                  <th className="pb-2">Contexto / Produto</th>
+                  <th className="pb-2">Vezes Encontrado</th>
+                  <th className="pb-2">Quantidade Total Acumulada</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-700/50">
+                {itensAgrupados.map((grupo, idx) => (
+                  <tr key={idx} className="hover:bg-slate-100/50 dark:hover:bg-slate-800/50">
+                    <td className="py-2.5 font-medium text-slate-900 dark:text-white">
+                      {grupo.contexto} <span className="text-[10px] text-slate-400 font-normal block">({grupo.exemplos})</span>
+                    </td>
+                    <td className="py-2.5">
+                      <span className="badge bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 font-bold">
+                        {grupo.ocorrencias}x cadastros
+                      </span>
+                    </td>
+                    <td className="py-2.5 font-bold text-primaria-700 dark:text-primaria-400">
+                      {grupo.qtdTotal} {grupo.unidade}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Filtros de categoria */}
       <div className="flex gap-2 overflow-x-auto pb-1">
@@ -418,7 +431,6 @@ export function PaginaDespensa() {
                     <span className={`badge ${corCategoria[item.categoria] || 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>{item.categoria}</span>
                   </div>
                   
-                  {/* Controles de quantidade rápida (+ e -) */}
                   <div className="flex items-center gap-2 mt-1">
                     <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 overflow-hidden">
                       <button
@@ -451,7 +463,6 @@ export function PaginaDespensa() {
               </div>
 
               <div className="flex items-center gap-1">
-                {/* Botão para enviar para a Lista de Compras (Carrinho) */}
                 <button
                   type="button"
                   onClick={() => enviarParaCarrinho(item)}
@@ -461,7 +472,6 @@ export function PaginaDespensa() {
                 >
                   <ShoppingCart size={18} />
                 </button>
-                {/* Botão de alternar status */}
                 <button
                   type="button"
                   onClick={() => alternarStatus(item)}
@@ -474,7 +484,6 @@ export function PaginaDespensa() {
                 >
                   {item.status === 'Aberto' ? <Unlock size={18} /> : <Lock size={18} />}
                 </button>
-                {/* Botão de editar */}
                 <button
                   type="button"
                   onClick={() => editarItem(item)}
@@ -483,7 +492,6 @@ export function PaginaDespensa() {
                 >
                   <Pencil size={18} />
                 </button>
-                {/* Botão de remover */}
                 <button
                   type="button"
                   onClick={() => removerItem(item.id)}
