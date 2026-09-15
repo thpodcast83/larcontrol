@@ -246,20 +246,27 @@ export function PaginaFinancas() {
     return lista;
   }, [contasDoUsuario, termoBusca]);
 
+  // Filtro estrito para considerar apenas despesas reais (ignorando registros de pagamento de fatura para não duplicar o somatório)
   const contasDespesasReais = useMemo(() => {
-    return contasDoUsuario.filter((c) => !c.descricao.toLowerCase().includes('pagamento de fatura'));
+    return contasDoUsuario.filter((c) => {
+      const descLower = c.descricao.toLowerCase();
+      return !descLower.includes('pagamento de fatura') && !descLower.includes('pagamento recebido');
+    });
   }, [contasDoUsuario]);
 
+  // Total Pendente considera apenas as despesas reais que estão pendentes
   const totalPendente = useMemo(
     () => contasDespesasReais.filter((c) => c.status === 'Pendente').reduce((acc, c) => acc + (c.valorParcela || c.valor), 0),
     [contasDespesasReais]
   );
 
+  // Total Pago considera apenas as despesas reais que já foram pagas
   const totalPago = useMemo(
-    () => contasDoUsuario.filter((c) => c.status === 'Paga' && !c.descricao.toLowerCase().includes('pagamento de fatura')).reduce((acc, c) => acc + (c.valorParcela || c.valor), 0),
-    [contasDoUsuario]
+    () => contasDespesasReais.filter((c) => c.status === 'Paga').reduce((acc, c) => acc + (c.valorParcela || c.valor), 0),
+    [contasDespesasReais]
   );
 
+  // Total Geral deve representar o somatório de todas as despesas reais (ou o saldo pendente dependendo da regra de negócio; aqui somamos as despesas ativas reais)
   const totalGeral = useMemo(() => contasDespesasReais.reduce((acc, c) => acc + (c.valorParcela || c.valor), 0), [contasDespesasReais]);
 
   const estatisticasCompras = useMemo(() => {
