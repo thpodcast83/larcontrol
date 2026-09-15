@@ -2,7 +2,7 @@
  * PaginaFinancas.tsx
  * -----------------------------------------------------------------------------
  * Módulo de Saúde Financeira, Cartões, Faturas Parceladas e Empréstimos.
- * Integrado com o ContextoAuth para controle de acesso por usuário e importação CSV corrigida.
+ * Inclui contagem de compras à vista/parceladas e isolamento de pagamentos.
  * -----------------------------------------------------------------------------
  */
 import { useEffect, useState, useMemo, useRef } from 'react';
@@ -141,11 +141,6 @@ export function PaginaFinancas() {
   const [numeroParcelas, setNumeroParcelas] = useState('1');
   const [parcelaAtual, setParcelaAtual] = useState('1');
 
-  const [descDivida, setDescDivida] = useState('');
-  const [valorDivida, setValorDivida] = useState('');
-  const [jurosDivida, setJurosDivida] = useState('');
-  const [parcelasDivida, setParcelasDivida] = useState('');
-
   useEffect(() => {
     if (emailUsuarioLogado && !responsavelNome) {
       setResponsavelNome(emailUsuarioLogado);
@@ -252,6 +247,7 @@ export function PaginaFinancas() {
     return lista;
   }, [contasDoUsuario, termoBusca]);
 
+  // Filtro essencial: descarta lançamentos de pagamento de fatura para não somarem como gasto
   const contasDespesasReais = useMemo(() => {
     return contasDoUsuario.filter((c) => !c.descricao.toLowerCase().includes('pagamento de fatura'));
   }, [contasDoUsuario]);
@@ -262,14 +258,32 @@ export function PaginaFinancas() {
   );
 
   const totalPago = useMemo(
-    () => contasDoUsuario.filter((c) => c.status === 'Paga').reduce((acc, c) => acc + (c.valorParcela || c.valor), 0),
+    () => contasDoUsuario.filter((c) => c.status === 'Paga' && !c.descricao.toLowerCase().includes('pagamento de fatura')).reduce((acc, c) => acc + (c.valorParcela || c.valor), 0),
     [contasDoUsuario]
   );
 
   const totalGeral = useMemo(() => contasDespesasReais.reduce((acc, c) => acc + (c.valorParcela || c.valor), 0), [contasDespesasReais]);
 
+  // Contagem de compras à vista e parceladas
+  const estatisticasCompras = useMemo(() => {
+    let aVista = 0;
+    let parceladas = 0;
+
+    contasDespesasReais.forEach((c) => {
+      const descLower = c.descricao.toLowerCase();
+      const temBarraParcela = /\d+\/\d+/.test(c.descricao) || descLower.includes('parcela') || (c.numeroParcelas && c.numeroParcelas > 1);
+      if (temBarraParcela || c.ehParcelado) {
+        parceladas++;
+      } else {
+        aVista++;
+      }
+    });
+
+    return { aVista, parceladas };
+  }, [contasDespesasReais]);
+
   const relatorioCartoes = useMemo(() => {
-    const mapa: Record<string, { totalFatura: number; parcelamentos: any[]; vencimento: string; fechamento: string; jurosEstimado: number }> = {};
+    const mapa: Record<string, { totalFatura: number; parcelamentos: any[]; vencimento: string; fechamento: string }> = {};
 
     contasDespesasReais.forEach((c) => {
       if (['Fatura de Cartão', 'Compras Online', 'Empréstimo', 'Internet', 'Água', 'Outros'].includes(c.categoria)) {
@@ -282,14 +296,13 @@ export function PaginaFinancas() {
             parcelamentos: [],
             vencimento: regraGlobal.vencimento,
             fechamento: regraGlobal.fechamento,
-            jurosEstimado: 0,
           };
         }
 
         const valParcela = c.valorParcela || c.valor;
         mapa[nomeCartao].totalFatura += valParcela;
 
-        if (c.ehParcelado && c.numeroParcelas && c.numeroParcelas > 1) {
+        if (c.ehParcelado || /\d+\/\d+/.test(c.descricao)) {
           mapa[nomeCartao].parcelamentos.push(c);
         }
       }
@@ -386,7 +399,7 @@ export function PaginaFinancas() {
           status: ehPagamento ? ('Paga' as const) : ('Pendente' as const),
           fixa: false,
           cartaoOrigem: 'Nubank',
-          ehParcelado: false,
+          ehParcelado: /\d+\/\d+/.test(desc),
           numeroParcelas: 1,
           parcelaAtual: 1,
           valorParcela: Math.abs(valorNum),
@@ -535,6 +548,10 @@ export function PaginaFinancas() {
                 <p className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
                   {formatarMoeda(dados.totalFatura)}
                 </p>
+                <div className="flex gap-3 mt-2 text-xs text-slate-500">
+                  <span>🛒 À vista: <strong className="text-slate-700 dark:text-slate-300">{estatisticasCompras.aVista}</strong></span>
+                  <span>📦 Parceladas: <strong className="text-slate-700 dark:text-slate-300">{estatisticasCompras.parceladas}</strong></span>
+                </div>
               </div>
             </div>
           ))}
@@ -774,7 +791,7 @@ export function PaginaFinancas() {
               className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
             />
           </div>
-          <button onClick={salvarConfigCartao} className="botao-primario w-full">
+          <button onClick={salvalRegraCartaoProxy} className="botao-primario w-full" onClick={salvarConfigCartao}>
             Salvar Regras
           </button>
         </div>
