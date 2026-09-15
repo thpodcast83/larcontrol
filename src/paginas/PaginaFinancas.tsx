@@ -2,10 +2,10 @@
  * PaginaFinancas.tsx
  * -----------------------------------------------------------------------------
  * Módulo de Saúde Financeira, Cartões, Faturas Parceladas e Empréstimos.
- * Integrado com o ContextoAuth para controle de acesso por usuário.
+ * Integrado com o ContextoAuth para controle de acesso por usuário e importação CSV.
  * -----------------------------------------------------------------------------
  */
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import {
   collection,
   onSnapshot,
@@ -16,7 +16,7 @@ import {
   setDoc,
 } from 'firebase/firestore';
 import { banco } from '@/firebase';
-import { useAuth } from '@/contextos/ContextoAuth'; // Importação do contexto de autenticação
+import { useAuth } from '@/contextos/ContextoAuth';
 import type { Conta, Divida } from '@/tipos';
 import { formatarMoeda } from '@/utils/utilFormato';
 import { gerarPdfGenerico } from '@/utils/utilPdf';
@@ -32,7 +32,7 @@ import {
   Calculator,
   Pencil,
   Search,
-  Info,
+  Upload,
   Settings,
 } from 'lucide-react';
 
@@ -105,18 +105,18 @@ function converterParaNumero(val: string): number {
 }
 
 export function PaginaFinancas() {
-  const { usuario } = useAuth(); // Obtém o usuário logado via ContextoAuth
+  const { usuario } = useAuth();
   const emailUsuarioLogado = usuario?.email || '';
   const nomeUsuarioLogado = usuario?.nome || '';
+
+  const arquivoInputRef = useRef<HTMLInputElement>(null);
 
   const [contas, setContas] = useState<Conta[]>([]);
   const [dividas, setDividas] = useState<Divida[]>([]);
   const [configCartoes, setConfigCartoes] = useState<Record<string, RegraCartao>>({});
-  const [responsaveisBanco, setResponsaveisBanco] = useState<string[]>([]);
 
   const [modalContaAberto, setModalContaAberto] = useState(false);
   const [modalDividaAberto, setModalDividaAberto] = useState(false);
-  const [modalRegrasAberto, setModalRegrasAberto] = useState(false);
   const [modalConfigCartaoAberto, setModalConfigCartaoAberto] = useState(false);
 
   const [editandoContaId, setEditandoContaId] = useState<string | null>(null);
@@ -147,7 +147,6 @@ export function PaginaFinancas() {
   const [parcelasDivida, setParcelasDivida] = useState('');
 
   useEffect(() => {
-    // Sincroniza o estado inicial do responsável caso o usuário demore alguns ms para carregar
     if (emailUsuarioLogado && !responsavelNome) {
       setResponsavelNome(emailUsuarioLogado);
     }
@@ -226,7 +225,6 @@ export function PaginaFinancas() {
     };
   }, []);
 
-  // FILTRAGEM POR USUÁRIO LOGADO (E-mail ou Nome associado)
   const contasDoUsuario = useMemo(() => {
     if (!emailUsuarioLogado) return contas;
     return contas.filter((c) => {
@@ -272,7 +270,6 @@ export function PaginaFinancas() {
 
   const relatorioCartoes = useMemo(() => {
     const mapa: Record<string, { totalFatura: number; parcelamentos: any[]; vencimento: string; fechamento: string; jurosEstimado: number }> = {};
-    const hoje = new Date();
 
     contasDespesasReais.forEach((c) => {
       if (['Fatura de Cartão', 'Compras Online', 'Empréstimo', 'Internet', 'Água', 'Outros'].includes(c.categoria)) {
@@ -338,6 +335,80 @@ export function PaginaFinancas() {
     }
 
     fecharModalConta();
+  };
+
+  // FUNÇÃO DE PROCESSAMENTO DO ARQUIVO CSV
+  const lidarComUploadCsv = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const arquivo = event.target.files?.[0];
+    if (!arquivo) return;
+
+    const leitor = new FileReader();
+    leitor.onload = async (e) => {
+      const conteudo = e.target?.result as string;
+      if (!conteudo) return;
+
+      const linhas = conteudo.split(/\r?\n/);
+      if (linhas.length <= 1) {
+        alert('O arquivo CSV parece estar vazio ou sem linhas de dados.');
+        return;
+      }
+
+      // Identifica o separador (vírgula ou ponto e vírgula)
+      const primeiraLinha = linhas[0];
+      const separador = primeiraLinha.includes(';') ? ';' : ',';
+      const cabecalhos = primeiraLinha.split(separador).map((h) => h.trim().toLowerCase());
+
+      const idxDescricao = cabecalhos.findIndex((h) => h.includes('desc') || h.includes('title') || h.includes('memo') || h.includes('titulo') || h.includes('historico'));
+      const idxValor = cabecalhos.findIndex((h) => h.includes('val') || h.includes('amount')  || h.includes('quantia') || h.includes('preco'));
+      const idxData = cabecalhos.findIndex((h) => h.includes('data') || h.includes('date') || h.includes('venc') || h.includes('due'));
+
+      let itensImportados = 0;
+
+      for (let i = 1; i < linhas.length; i++) {
+        const linha = linhas[i].trim();
+        if (!linha) continue;
+
+        const colunas = linha.split(separador).map((c) => c.trim().replace(/^["']|["']$/g, ''));
+        
+        const desc = idxDescricao !== -1 ? colunas[idxDescricao] : (colunas[0] || 'Despesa Importada CSV');
+        const valStr = idxValor !== -1 ? colunas[idxValor] : (colunas[1] || '0');
+        const venc = idxData !== -1 ? colunas[idxData] : 'Não informado';
+
+        const valorNum = Math.abs(converterParaNumero(valStr));
+        if (valorNum <= 0) continue;
+
+        const regraGlobal = configCartoes['Nubank'] || { fechamento: '3', vencimento: '10', jurosMes: 2.75 };
+
+        const dadosNovaConta = {
+          descricao: desc,
+          categoria: 'Fatura de Cartão' as const,
+          valor: valorNum,
+          vencimento: venc,
+          status: 'Pendente' as const,
+          fixa: false,
+          cartaoOrigem: 'Nubank',
+          ehParcelado: false,
+          numeroParcelas: 1,
+          parcelaAtual: 1,
+          valorParcela: valorNum,
+          diaFechamento: regraGlobal.fechamento,
+          diaVencimento: regraGlobal.vencimento,
+          taxaJurosMes: regraGlobal.jurosMes,
+          responsavelId: usuario?.uid || '',
+          responsavelNome: emailUsuarioLogado || 'Não atribuído',
+        };
+
+        await addDoc(collection(banco, 'contas'), dadosNovaConta);
+        itensImportados++;
+      }
+
+      alert(`Sucesso! ${itensImportados} despesas foram importadas do arquivo CSV.`);
+      if (arquivoInputRef.current) {
+        arquivoInputRef.current.value = '';
+      }
+    };
+
+    leitor.readAsText(arquivo, 'UTF-8');
   };
 
   const abrirConfigCartao = (nomeCartao: string) => {
@@ -406,53 +477,6 @@ export function PaginaFinancas() {
   const fecharModalConta = () => {
     limparFormularioConta();
     setModalContaAberto(false);
-  };
-
-  const calcularDivida = () => {
-    const pv = converterParaNumero(valorDivida);
-    const i = converterParaNumero(jurosDivida) / 100;
-    const n = parseInt(parcelasDivida, 10) || 0;
-
-    if (pv <= 0 || n <= 0) return null;
-
-    let pmt: number;
-    if (i === 0) {
-      pmt = pv / n;
-    } else {
-      pmt = (pv * i) / (1 - Math.pow(1 + i, -n));
-    }
-
-    return {
-      pv,
-      i,
-      n,
-      pmt,
-      total: pmt * n,
-      jurosTotal: pmt * n - pv,
-    };
-  };
-
-  const salvarDivida = async () => {
-    const calc = calcularDivida();
-    if (!calc || !descDivida.trim()) return;
-
-    await addDoc(collection(banco, 'dividas'), {
-      descricao: descDivida.trim(),
-      valorTotal: calc.pv,
-      jurosMensal: calc.i * 100,
-      parcelas: calc.n,
-      valorParcela: calc.pmt,
-    });
-
-    fecharModalDivida();
-  };
-
-  const fecharModalDivida = () => {
-    setDescDivida('');
-    setValorDivida('');
-    setJurosDivida('');
-    setParcelasDivida('');
-    setModalDividaAberto(false);
   };
 
   const gerarPdf = () => {
@@ -551,6 +575,25 @@ export function PaginaFinancas() {
             <Plus size={18} />
             Adicionar conta
           </button>
+
+          {/* BOTÃO DE UPLOAD DE CSV */}
+          <div>
+            <input
+              type="file"
+              accept=".csv"
+              ref={arquivoInputRef}
+              onChange={lidarComUploadCsv}
+              className="hidden"
+            />
+            <button
+              onClick={() => arquivoInputRef.current?.click()}
+              className="botao-secundario flex items-center gap-2 cursor-pointer"
+            >
+              <Upload size={18} />
+              Enviar CSV
+            </button>
+          </div>
+
           <button onClick={() => setModalDividaAberto(true)} className="botao-secundario">
             <Calculator size={18} />
             Simulador
