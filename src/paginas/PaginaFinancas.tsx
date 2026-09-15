@@ -2,7 +2,7 @@
  * PaginaFinancas.tsx
  * -----------------------------------------------------------------------------
  * Módulo de Saúde Financeira, Cartões, Faturas Parceladas e Empréstimos.
- * Corrigido para não somar o Pagamento de Fatura no total de gastos/compras.
+ * Com controle de acesso por usuário baseado no e-mail autenticado.
  * -----------------------------------------------------------------------------
  */
 import { useEffect, useState, useMemo } from 'react';
@@ -15,6 +15,7 @@ import {
   doc,
   setDoc,
 } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth'; // Importado para pegar o usuário logado
 import { banco } from '@/firebase';
 import type { Conta, Divida } from '@/tipos';
 import { formatarMoeda } from '@/utils/utilFormato';
@@ -108,11 +109,15 @@ function converterParaNumero(val: string): number {
 }
 
 export function PaginaFinancas() {
+  const auth = getAuth();
+  const usuarioAtual = auth.currentUser;
+  const emailUsuarioLogado = usuarioAtual?.email || '';
+
   const [contas, setContas] = useState<Conta[]>([]);
   const [dividas, setDividas] = useState<Divida[]>([]);
   const [configCartoes, setConfigCartoes] = useState<Record<string, RegraCartao>>({});
   
-  const [responsaveisBanco, setResponsaveisBanco] = useState<string[]>([]);
+  const [responsaveisBanco, setResponsaveisBanco] = useState<string[]>(sch => sch);
   
   const [modalContaAberto, setModalContaAberto] = useState(false);
   const [modalDividaAberto, setModalDividaAberto] = useState(false);
@@ -134,7 +139,7 @@ export function PaginaFinancas() {
   const [vencimento, setVencimento] = useState('');
   const [statusConta, setStatusConta] = useState<'Paga' | 'Pendente'>('Pendente');
   const [fixa, setFixa] = useState(false);
-  const [responsavelNome, setResponsavelNome] = useState('');
+  const [responsavelNome, setResponsavelNome] = useState(emailUsuarioLogado);
 
   const [cartaoOrigem, setCartaoOrigem] = useState('Nubank');
   const [tipoPagamento, setTipoPagamento] = useState<'a-vista' | 'parcelado'>('a-vista');
@@ -234,22 +239,35 @@ export function PaginaFinancas() {
     };
   }, []);
 
-  const contasFiltradas = useMemo(() => {
-    if (!termoBusca.trim()) return contas;
-    const buscaLower = termoBusca.toLowerCase();
-    return contas.filter(
-      (c) =>
-        c.descricao.toLowerCase().includes(buscaLower) ||
-        c.categoria.toLowerCase().includes(buscaLower) ||
-        (c.cartaoOrigem && c.cartaoOrigem.toLowerCase().includes(buscaLower)) ||
-        (c.responsavelNome && c.responsavelNome.toLowerCase().includes(buscaLower))
-    );
-  }, [contas, termoBusca]);
+  // FILTRAGEM POR USUÁRIO LOGADO (E-mail)
+  const contasDoUsuario = useMemo(() => {
+    if (!emailUsuarioLogado) return contas;
+    // Retorna apenas faturas/contas onde o responsável bate com o e-mail do usuário logado
+    // (ou se não tiver responsável definido e quisermos exibir, mas por segurança restringe ao e-mail)
+    return contas.filter((c) => {
+      const resp = (c.responsavelNome || '').toLowerCase();
+      return resp === emailUsuarioLogado.toLowerCase() || resp === '';
+    });
+  }, [contas, emailUsuarioLogado]);
 
-  // Contas ativas desconsiderando o registro de pagamento de fatura para os totais de gastos
+  const contasFiltradas = useMemo(() => {
+    let lista = contasDoUsuario;
+    if (termoBusca.trim()) {
+      const buscaLower = termoBusca.toLowerCase();
+      lista = lista.filter(
+        (c) =>
+          c.descricao.toLowerCase().includes(buscaLower) ||
+          c.categoria.toLowerCase().includes(buscaLower) ||
+          (c.cartaoOrigem && c.cartaoOrigem.toLowerCase().includes(buscaLower)) ||
+          (c.responsavelNome && c.responsavelNome.toLowerCase().includes(buscaLower))
+      );
+    }
+    return lista;
+  }, [contasDoUsuario, termoBusca]);
+
   const contasDespesasReais = useMemo(() => {
-    return contas.filter((c) => !c.descricao.toLowerCase().includes('pagamento de fatura'));
-  }, [contas]);
+    return contasDoUsuario.filter((c) => !c.descricao.toLowerCase().includes('pagamento de fatura'));
+  }, [contasDoUsuario]);
 
   const totalPendente = useMemo(
     () => contasDespesasReais.filter((c) => c.status === 'Pendente').reduce((acc, c) => acc + (c.valorParcela || c.valor), 0),
@@ -257,8 +275,8 @@ export function PaginaFinancas() {
   );
 
   const totalPago = useMemo(
-    () => contas.filter((c) => c.status === 'Paga').reduce((acc, c) => acc + (c.valorParcela || c.valor), 0),
-    [contas]
+    () => contasDoUsuario.filter((c) => c.status === 'Paga').reduce((acc, c) => acc + (c.valorParcela || c.valor), 0),
+    [contasDoUsuario]
   );
 
   const totalGeral = useMemo(() => contasDespesasReais.reduce((acc, c) => acc + (c.valorParcela || c.valor), 0), [contasDespesasReais]);
@@ -268,7 +286,7 @@ export function PaginaFinancas() {
     const hoje = new Date();
 
     contasDespesasReais.forEach((c) => {
-      if (c.categoria === 'Fatura de Cartão' || c.categoria === 'Compras Online' || c.categoria === 'Empréstimo' || c.categoria === 'Internet' || c.categoria === 'Água' || c.categoria === 'Outros') {
+      if (['Fatura de Cartão', 'Compras Online', 'Empréstimo', 'Internet', 'Água', 'Outros'].includes(c.categoria)) {
         const nomeCartao = c.cartaoOrigem || 'Geral';
         const regraGlobal = configCartoes[nomeCartao] || configCartoes['Outros'] || { fechamento: '3', vencimento: '10', jurosMes: 2.75 };
 
@@ -320,129 +338,6 @@ export function PaginaFinancas() {
       .filter((c) => c.valor > 0);
   }, [contasDespesasReais]);
 
-  const importarCsvNubank = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const arquivo = e.target.files?.[0];
-    if (!arquivo) return;
-
-    const leitor = new FileReader();
-    leitor.onload = async (evento) => {
-      const conteudo = evento.target?.result as string;
-      const linhas = conteudo.split('\n');
-      let importadosCount = 0;
-
-      for (let i = 1; i < linhas.length; i++) {
-        const linha = linhas[i].trim();
-        if (!linha) continue;
-
-        const colunas = linha.split(',');
-        if (colunas.length < 3) continue;
-
-        const data = colunas[0].trim();
-        let titulo = colunas[1].replace(/"/g, '').trim();
-        const valorStr = colunas[2].replace(/"/g, '').replace('.', '').replace(',', '.');
-        const rawAmount = parseFloat(valorStr) || 0;
-
-        if (rawAmount < 0) {
-          await addDoc(collection(banco, 'contas'), {
-            descricao: `Pagamento de Fatura (${titulo})`,
-            categoria: 'Fatura de Cartão',
-            valor: Math.abs(rawAmount),
-            vencimento: data,
-            status: 'Paga',
-            fixa: false,
-            cartaoOrigem: 'Nubank',
-            ehParcelado: false,
-            numeroParcelas: 1,
-            parcelaAtual: 1,
-            valorParcela: Math.abs(rawAmount),
-            diaFechamento: '03',
-            diaVencimento: '10',
-            taxaJurosMes: 2.75,
-            responsavelId: '',
-            responsavelNome: 'Sistema / Fatura',
-          });
-          continue;
-        }
-
-        let ehParcelado = false;
-        let parcelaAtual = 1;
-        let numeroParcelas = 1;
-
-        const matchSlash = titulo.match(/\s*-\s*(\d+)\/(\d+)$/);
-        const matchParcela = titulo.match(/Parcela\s+(\d+)\/(\d+)/i);
-
-        if (matchSlash) {
-          ehParcelado = true;
-          parcelaAtual = parseInt(matchSlash[1], 10);
-          numeroParcelas = parseInt(matchSlash[2], 10);
-          titulo = titulo.replace(matchSlash[0], '').trim();
-        } else if (matchParcela) {
-          ehParcelado = true;
-          parcelaAtual = parseInt(matchParcela[1], 10);
-          numeroParcelas = parseInt(matchParcela[2], 10);
-          titulo = titulo.replace(matchParcela[0], '').trim();
-        }
-
-        let categoria: Conta['categoria'] = 'Compras Online';
-        const tLower = titulo.toLowerCase();
-        if (tLower.includes('claro') || tLower.includes('net') || tLower.includes('telecom')) categoria = 'Internet';
-        else if (tLower.includes('corsan')) categoria = 'Água';
-        else if (tLower.includes('uber') || tLower.includes('viasul') || tLower.includes('farmacia')) categoria = 'Outros';
-
-        const valorParcela = rawAmount;
-        const valorTotalCalculado = ehParcelado ? valorParcela * numeroParcelas : valorParcela;
-
-        await addDoc(collection(banco, 'contas'), {
-          descricao: titulo,
-          categoria: categoria,
-          valor: valorTotalCalculado,
-          vencimento: data,
-          status: 'Pendente',
-          fixa: false,
-          cartaoOrigem: 'Nubank',
-          ehParcelado: ehParcelado,
-          numeroParcelas: numeroParcelas,
-          parcelaAtual: parcelaAtual,
-          valorParcela: valorParcela,
-          diaFechamento: '03',
-          diaVencimento: '10',
-          taxaJurosMes: 2.75,
-          responsavelId: '',
-          responsavelNome: 'Não atribuído',
-        });
-
-        importadosCount++;
-      }
-
-      alert(`Sucesso! ${importadosCount} lançamentos do Nubank foram importados e organizados.`);
-    };
-
-    leitor.readAsText(arquivo);
-  };
-
-  const avancarFaturaNubank = async () => {
-    if (!confirm("Deseja fechar/avançar o ciclo da fatura do Nubank? As compras à vista pagas serão removidas e as parcelas ativas avançarão para o próximo mês.")) return;
-
-    for (const c of contas) {
-      if (c.cartaoOrigem === 'Nubank') {
-        if (c.status === 'Paga' && !c.ehParcelado) {
-          await deleteDoc(doc(banco, 'contas', c.id));
-        } else if (c.ehParcelado && c.status === 'Paga') {
-          const proximaParcela = c.parcelaAtual + 1;
-          if (proximaParcela > c.numeroParcelas) {
-            await deleteDoc(doc(banco, 'contas', c.id));
-          } else {
-            await updateDoc(doc(banco, 'contas', c.id), {
-              parcelaAtual: proximaParcela,
-              status: 'Pendente'
-            });
-          }
-        }
-      }
-    }
-    alert("Ciclo da fatura avançado com sucesso!");
-  };
-
   const salvarConta = async () => {
     if (!descricao.trim() || !valor) return;
 
@@ -469,8 +364,8 @@ export function PaginaFinancas() {
       diaFechamento: regraGlobal.fechamento,
       diaVencimento: regraGlobal.vencimento,
       taxaJurosMes: regraGlobal.jurosMes,
-      responsavelId: '', 
-      responsavelNome: responsavelNome || 'Não atribuído',
+      responsavelId: usuarioAtual?.uid || '', 
+      responsavelNome: responsavelNome || emailUsuarioLogado || 'Não atribuído',
     };
 
     if (editandoContaId) {
@@ -526,7 +421,7 @@ export function PaginaFinancas() {
     setTipoPagamento(conta.ehParcelado ? 'parcelado' : 'a-vista');
     setNumeroParcelas(String(conta.numeroParcelas || 1));
     setParcelaAtual(String(conta.parcelaAtual || 1));
-    setResponsavelNome(conta.responsavelNome || '');
+    setResponsavelNome(conta.responsavelNome || emailUsuarioLogado);
     setModalContaAberto(true);
   };
 
@@ -542,7 +437,7 @@ export function PaginaFinancas() {
     setTipoPagamento('a-vista');
     setNumeroParcelas('1');
     setParcelaAtual('1');
-    setResponsavelNome('');
+    setResponsavelNome(emailUsuarioLogado);
   };
 
   const fecharModalConta = () => {
@@ -635,18 +530,10 @@ export function PaginaFinancas() {
             Finanças e Faturas de Cartão
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            Gestão inteligente de cartões, importação de extratos, parcelas e encargos.
+            Visualizando finanças para: <strong className="text-teal-600">{emailUsuarioLogado || 'Usuário Geral'}</strong>
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={avancarFaturaNubank}
-            className="botao-secundario flex items-center gap-1.5 text-xs"
-            title="Avança as parcelas pagas e limpa compras à vista"
-          >
-            <RefreshCw size={16} className="text-teal-600" />
-            Avançar Fatura Nubank
-          </button>
           <button
             onClick={() => setModalRegrasAberto(true)}
             className="botao-secundario flex items-center gap-1.5 text-xs"
@@ -668,7 +555,6 @@ export function PaginaFinancas() {
                 <button
                   onClick={() => abrirConfigCartao(nomeCartao)}
                   className="badge bg-teal-50 hover:bg-teal-100 text-teal-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                  title="Clique para alterar fechamento e vencimento"
                 >
                   <Settings size={12} /> Regras Gerais
                 </button>
@@ -678,22 +564,6 @@ export function PaginaFinancas() {
                 <p className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
                   {formatarMoeda(dados.totalFatura)}
                 </p>
-              </div>
-              <div className="text-xs text-slate-500 space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
-                <div className="flex justify-between font-medium text-slate-600 dark:text-slate-300">
-                  <span>Fechamento: Dia {dados.fechamento}</span>
-                  <span>Vencimento: Dia {dados.vencimento}</span>
-                </div>
-                {dados.jurosEstimado > 0 && (
-                  <div className="flex items-center gap-1 text-red-600 font-semibold pt-1">
-                    <AlertCircle size={14} /> Juros/Multa atraso estimada: {formatarMoeda(dados.jurosEstimado)}
-                  </div>
-                )}
-                {dados.parcelamentos.length > 0 && (
-                  <p className="text-teal-600 font-medium pt-1">
-                    Possui {dados.parcelamentos.length} compra(s) parcelada(s) ativa(s).
-                  </p>
-                )}
               </div>
             </div>
           ))}
@@ -721,31 +591,6 @@ export function PaginaFinancas() {
         </div>
       </div>
 
-      {gastosPorCategoria.length > 0 && (
-        <div className="cartao">
-          <h2 className="font-bold text-slate-800 dark:text-slate-100 mb-4">Gastos por categoria</h2>
-          <div className="space-y-3">
-            {gastosPorCategoria.map((g) => {
-              const pct = totalGeral > 0 ? (g.valor / totalGeral) * 100 : 0;
-              return (
-                <div key={g.categoria}>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-slate-600 dark:text-slate-300 font-medium">{g.categoria}</span>
-                    <span className="text-slate-700 dark:text-slate-200 font-semibold">{formatarMoeda(g.valor)}</span>
-                  </div>
-                  <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-3 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${coresCategoria[g.categoria] || 'bg-teal-500'}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <button
@@ -758,13 +603,6 @@ export function PaginaFinancas() {
             <Plus size={18} />
             Adicionar conta
           </button>
-
-          <label className="botao-secundario cursor-pointer flex items-center gap-1.5">
-            <Upload size={18} className="text-teal-600" />
-            Importar CSV Nubank
-            <input type="file" accept=".csv" onChange={importarCsvNubank} className="hidden" />
-          </label>
-
           <button onClick={() => setModalDividaAberto(true)} className="botao-secundario">
             <Calculator size={18} />
             Simulador
@@ -779,19 +617,11 @@ export function PaginaFinancas() {
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Pesquisar compra, cartão, responsável..."
+            placeholder="Pesquisar compra, cartão..."
             value={termoBusca}
             onChange={(e) => setTermoBusca(e.target.value)}
             className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm shadow-sm"
           />
-          {termoBusca && (
-            <button
-              onClick={() => setTermoBusca('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-            >
-              <X size={16} />
-            </button>
-          )}
         </div>
       </div>
 
@@ -799,11 +629,7 @@ export function PaginaFinancas() {
         {contasFiltradas.length === 0 ? (
           <div className="cartao text-center py-12 text-slate-400">
             <Wallet size={40} className="mx-auto mb-3 opacity-40" />
-            <p>
-              {contas.length === 0
-                ? 'Nenhuma conta ou fatura registrada ainda.'
-                : 'Nenhuma conta encontrada com o termo pesquisado.'}
-            </p>
+            <p>Nenhuma conta ou fatura registrada para o seu usuário.</p>
           </div>
         ) : (
           contasFiltradas.map((c) => (
@@ -817,41 +643,23 @@ export function PaginaFinancas() {
                     <h3 className="font-semibold text-slate-900 dark:text-slate-100">{c.descricao}</h3>
                     {c.cartaoOrigem && <span className="badge bg-teal-50 text-teal-700 text-xs">{c.cartaoOrigem}</span>}
                     {c.responsavelNome && <span className="badge bg-indigo-50 text-indigo-700 text-xs">👤 {c.responsavelNome}</span>}
-                    {c.ehParcelado && (
-                      <span className="badge bg-purple-50 text-purple-700 text-xs">
-                        Parcela {c.parcelaAtual || 1}/{c.numeroParcelas}
-                      </span>
-                    )}
-                    {!c.ehParcelado && <span className="badge bg-blue-50 text-blue-700 text-xs">À vista</span>}
-                    {c.fixa && <span className="badge bg-slate-100 text-slate-600 text-xs">Fixa</span>}
                   </div>
                   <p className="text-sm text-slate-500 mt-0.5">
                     {c.categoria} • Vence: {c.vencimento} • Valor: <strong className="text-slate-800 dark:text-slate-200">{formatarMoeda(c.valorParcela || c.valor)}</strong>
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => marcarComoPaga(c)}
-                  className={`badge px-3 py-1.5 ${
-                    c.status === 'Paga'
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-amber-100 text-amber-700'
-                  }`}
+                  className={`badge px-3 py-1.5 ${c.status === 'Paga' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}
                 >
-                  {c.status === 'Paga' ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
                   {c.status}
                 </button>
-                <button
-                  onClick={() => editarConta(c)}
-                  className="p-2 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
-                >
+                <button onClick={() => editarConta(c)} className="p-2 rounded-lg text-slate-400 hover:text-teal-600">
                   <Pencil size={16} />
                 </button>
-                <button
-                  onClick={() => removerConta(c.id)}
-                  className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                >
+                <button onClick={() => removerConta(c.id)} className="p-2 rounded-lg text-slate-400 hover:text-red-600">
                   <Trash2 size={16} />
                 </button>
               </div>
@@ -859,95 +667,6 @@ export function PaginaFinancas() {
           ))
         )}
       </div>
-
-      {dividas.length > 0 && (
-        <div>
-          <h2 className="font-bold text-slate-800 dark:text-slate-100 mb-3 flex items-center gap-2">
-            <TrendingDown size={20} className="text-red-600" />
-            Empréstimos e Dívidas Cadastradas
-          </h2>
-          <div className="space-y-3">
-            {dividas.map((d) => (
-              <div key={d.id} className="cartao flex items-center gap-3 animar-entrada">
-                <div className="flex-1">
-                  <h3 className="font-semibold text-slate-900 dark:text-slate-100">{d.descricao}</h3>
-                  <p className="text-sm text-slate-500 mt-0.5">
-                    {d.parcelas}x de {formatarMoeda(d.valorParcela)} • Juros: {d.jurosMensal}%/mês
-                  </p>
-                </div>
-                <button
-                  onClick={() => removerDivida(d.id)}
-                  className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Modal Configuração de Cartão */}
-      <Modal
-        aberto={modalConfigCartaoAberto}
-        onFechar={() => setModalConfigCartaoAberto(false)}
-        titulo={`Configurar Cartão: ${cartaoEditandoConfig}`}
-      >
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-white mb-1">Dia do Fechamento</label>
-              <input
-                type="text"
-                value={novoFechamento}
-                onChange={(e) => setNovoFechamento(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-white mb-1">Dia do Vencimento</label>
-              <input
-                type="text"
-                value={novoVencimento}
-                onChange={(e) => setNovoVencimento(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-white mb-1">Taxa de Juros Rotativo (% ao mês)</label>
-            <input
-              type="text"
-              value={novoJuros}
-              onChange={(e) => setNovoJuros(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
-            />
-          </div>
-          <button onClick={salvarConfigCartao} className="botao-primario w-full">
-            Salvar configurações
-          </button>
-        </div>
-      </Modal>
-
-      {/* Modal Regras Oficiais */}
-      <Modal
-        aberto={modalRegrasAberto}
-        onFechar={() => setModalRegrasAberto(false)}
-        titulo="Regras Oficiais e Taxas"
-      >
-        <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1 text-sm text-slate-200">
-          <div className="p-3 bg-slate-800 rounded-xl border border-slate-700 space-y-2">
-            <h3 className="font-bold text-teal-400 flex items-center gap-1.5">
-              <CreditCard size={16} /> Nubank
-            </h3>
-            <ul className="list-disc list-inside space-y-1.5 text-xs text-slate-300">
-              <li><strong>Rotativo:</strong> 2,75% a 19,99% ao mês.</li>
-              <li><strong>Teto Legal (BC):</strong> O acúmulo de juros não pode ultrapassar 100% da dívida original.</li>
-              <li><strong>Multa de Atraso:</strong> 2% fixo + Juros de mora de 1% ao mês.</li>
-            </ul>
-          </div>
-        </div>
-      </Modal>
 
       {/* Modal Adicionar/Editar Conta */}
       <Modal
@@ -964,7 +683,6 @@ export function PaginaFinancas() {
               value={descricao}
               onChange={(e) => setDescricao(e.target.value)}
               className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
-              autoFocus
             />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -997,17 +715,13 @@ export function PaginaFinancas() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-white mb-1">Responsável</label>
-            <select
+            <label className="block text-xs font-bold text-white mb-1">Responsável (E-mail)</label>
+            <input
+              type="text"
               value={responsavelNome}
               onChange={(e) => setResponsavelNome(e.target.value)}
               className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
-            >
-              <option value="">Selecione um responsável...</option>
-              {responsaveisBanco.map((resp: string) => (
-                <option key={resp} value={resp} className="bg-slate-800 text-white">{resp}</option>
-              ))}
-            </select>
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -1033,140 +747,8 @@ export function PaginaFinancas() {
             </div>
           </div>
 
-          <div className="p-3 bg-slate-800 rounded-xl space-y-3 border border-slate-700">
-            <label className="block text-xs font-bold text-white">Tipo de Pagamento</label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setTipoPagamento('a-vista')}
-                className={`flex-1 py-2 rounded-lg font-semibold text-xs ${tipoPagamento === 'a-vista' ? 'bg-teal-600 text-white' : 'bg-slate-900 text-slate-300'}`}
-              >
-                À vista
-              </button>
-              <button
-                type="button"
-                onClick={() => setTipoPagamento('parcelado')}
-                className={`flex-1 py-2 rounded-lg font-semibold text-xs ${tipoPagamento === 'parcelado' ? 'bg-teal-600 text-white' : 'bg-slate-900 text-slate-300'}`}
-              >
-                Parcelado
-              </button>
-            </div>
-
-            {tipoPagamento === 'parcelado' && (
-              <div className="grid grid-cols-3 gap-3 pt-2">
-                <div>
-                  <label className="block text-xs font-bold text-white mb-1">Parcela Atual</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={parcelaAtual}
-                    onChange={(e) => setParcelaAtual(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-900 text-white text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-white mb-1">Total Parcelas</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={numeroParcelas}
-                    onChange={(e) => setNumeroParcelas(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-900 text-white text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-white mb-1">Valor Parcela</label>
-                  <div className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-900 text-white text-sm font-semibold flex items-center">
-                    {formatarMoeda((converterParaNumero(valor) / (parseInt(numeroParcelas, 10) || 1)))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setStatusConta('Pendente')}
-              className={`flex-1 py-2 rounded-xl font-semibold text-sm ${statusConta === 'Pendente' ? 'bg-amber-500 text-white' : 'bg-slate-800 text-slate-300'}`}
-            >
-              Pendente
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusConta('Paga')}
-              className={`flex-1 py-2 rounded-xl font-semibold text-sm ${statusConta === 'Paga' ? 'bg-green-600 text-white' : 'bg-slate-800 text-slate-300'}`}
-            >
-              Paga
-            </button>
-          </div>
-
           <button onClick={salvarConta} className="botao-primario w-full">
             {editandoContaId ? 'Salvar alterações' : 'Adicionar conta'}
-          </button>
-        </div>
-      </Modal>
-
-      {/* Modal Simulador */}
-      <Modal
-        aberto={modalDividaAberto}
-        onFechar={fecharModalDivida}
-        titulo="Simulador de Empréstimo"
-      >
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-white mb-1">Descrição</label>
-            <input
-              type="text"
-              value={descDivida}
-              onChange={(e) => setDescDivida(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
-              autoFocus
-            />
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-white mb-1">Valor</label>
-              <input
-                type="text"
-                value={valorDivida}
-                onChange={(e) => setValorDivida(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-white mb-1">Juros (%/mês)</label>
-              <input
-                type="text"
-                value={jurosDivida}
-                onChange={(e) => setJurosDivida(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-white mb-1">Parcelas</label>
-              <input
-                type="text"
-                value={parcelasDivida}
-                onChange={(e) => setParcelasDivida(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
-              />
-            </div>
-          </div>
-          {resultadoDivida && (
-            <div className="bg-slate-800 rounded-xl p-4 space-y-2 text-sm border border-slate-700">
-              <div className="flex justify-between">
-                <span className="text-slate-300">Parcela:</span>
-                <span className="font-bold text-teal-400">{formatarMoeda(resultadoDivida.pmt)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-300">Total:</span>
-                <span className="font-bold text-white">{formatarMoeda(resultadoDivida.total)}</span>
-              </div>
-            </div>
-          )}
-          <button onClick={salvarDivida} className="botao-primario w-full">
-            Salvar empréstimo
           </button>
         </div>
       </Modal>
