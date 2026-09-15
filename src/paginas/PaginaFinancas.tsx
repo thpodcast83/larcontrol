@@ -337,7 +337,6 @@ export function PaginaFinancas() {
     fecharModalConta();
   };
 
-  // FUNÇÃO DE UPLOAD DE CSV CORRIGIDA (TRATA VALORES NEGATIVOS COMO PAGAMENTOS)
   const lidarComUploadCsv = (event: React.ChangeEvent<HTMLInputElement>) => {
     const arquivo = event.target.files?.[0];
     if (!arquivo) return;
@@ -576,7 +575,6 @@ export function PaginaFinancas() {
             Adicionar conta
           </button>
 
-          {/* BOTÃO DE UPLOAD DE CSV */}
           <div>
             <input
               type="file"
@@ -659,7 +657,6 @@ export function PaginaFinancas() {
         )}
       </div>
 
-      {/* Modal Adicionar/Editar Conta */}
       <Modal
         aberto={modalContaAberto}
         onFechar={fecharModalConta}
@@ -740,6 +737,45 @@ export function PaginaFinancas() {
 
           <button onClick={salvarConta} className="botao-primario w-full">
             {editandoContaId ? 'Salvar alterações' : 'Adicionar conta'}
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        aberto={modalConfigCartaoAberto}
+        onFechar={() => setModalConfigCartaoAberto(false)}
+        titulo={`Regras do Cartão: ${cartaoEditandoConfig}`}
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-200 mb-1">Dia de Fechamento</label>
+            <input
+              type="text"
+              value={novoFechamento}
+              onChange={(e) => setNovoFechamento(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-200 mb-1">Dia de Vencimento</label>
+            <input
+              type="text"
+              value={novoVencimento}
+              onChange={(e) => setNovoVencimento(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-200 mb-1">Taxa de Juros Mensal (%)</label>
+            <input
+              type="text"
+              value={novoJuros}
+              onChange={(e) => setNovoJuros(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
+            />
+          </div>
+          <button onClick={salvarConfigCartao} className="botao-primario w-full">
+            Salvar Regras
           </button>
         </div>
       </Modal>
