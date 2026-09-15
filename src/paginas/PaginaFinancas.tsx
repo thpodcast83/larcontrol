@@ -2,7 +2,7 @@
  * PaginaFinancas.tsx
  * -----------------------------------------------------------------------------
  * Módulo de Saúde Financeira, Cartões, Faturas Parceladas e Empréstimos.
- * Integrado para buscar os responsáveis diretamente da coleção do Firestore.
+ * Integrado com Importação Automática de CSV do Nubank e Gestão de Ciclos.
  * -----------------------------------------------------------------------------
  */
 import { useEffect, useState, useMemo } from 'react';
@@ -35,6 +35,8 @@ import {
   X,
   Info,
   Settings,
+  Upload,
+  RefreshCw,
 } from 'lucide-react';
 
 const categoriasConta = [
@@ -110,7 +112,6 @@ export function PaginaFinancas() {
   const [dividas, setDividas] = useState<Divida[]>([]);
   const [configCartoes, setConfigCartoes] = useState<Record<string, RegraCartao>>({});
   
-  // Estado para armazenar os responsáveis buscados do Firestore
   const [responsaveisBanco, setResponsaveisBanco] = useState<string[]>([]);
   
   const [modalContaAberto, setModalContaAberto] = useState(false);
@@ -121,15 +122,12 @@ export function PaginaFinancas() {
   const [editandoContaId, setEditandoContaId] = useState<string | null>(null);
   const [cartaoEditandoConfig, setCartaoEditandoConfig] = useState<string>('Nubank');
 
-  // Campos para editar a configuração do cartão selecionado
   const [novoFechamento, setNovoFechamento] = useState('3');
   const [novoVencimento, setNovoVencimento] = useState('10');
   const [novoJuros, setNovoJuros] = useState('2.75');
 
-  // Campo de pesquisa/filtro
   const [termoBusca, setTermoBusca] = useState('');
 
-  // Campos do formulário de conta / cartão / parcelamento
   const [descricao, setDescricao] = useState('');
   const [categoria, setCategoria] = useState<Conta['categoria']>('Fatura de Cartão');
   const [valor, setValor] = useState('');
@@ -138,13 +136,11 @@ export function PaginaFinancas() {
   const [fixa, setFixa] = useState(false);
   const [responsavelNome, setResponsavelNome] = useState('');
 
-  // Campos específicos para Cartão / Parcelamento
   const [cartaoOrigem, setCartaoOrigem] = useState('Nubank');
   const [tipoPagamento, setTipoPagamento] = useState<'a-vista' | 'parcelado'>('a-vista');
   const [numeroParcelas, setNumeroParcelas] = useState('1');
   const [parcelaAtual, setParcelaAtual] = useState('1');
 
-  // Campos do simulador de dívida/empréstimo
   const [descDivida, setDescDivida] = useState('');
   const [valorDivida, setValorDivida] = useState('');
   const [jurosDivida, setJurosDivida] = useState('');
@@ -194,7 +190,6 @@ export function PaginaFinancas() {
       setDividas(lista);
     });
 
-    // Sincronizar configurações de cartões do Firestore
     const cancelarConfig = onSnapshot(collection(banco, 'config_cartoes'), (snapshot) => {
       const configsMap: Record<string, RegraCartao> = {};
       
@@ -219,12 +214,10 @@ export function PaginaFinancas() {
       setConfigCartoes(configsMap);
     });
 
-    // Sincronizar usuários diretamente da coleção 'users' (conforme print do Firebase Authentication/Firestore)
     const cancelarUsuarios = onSnapshot(collection(banco, 'users'), (snapshot) => {
       const nomes: string[] = [];
       snapshot.forEach((docSnap) => {
         const dados = docSnap.data();
-        // Coleta o e-mail ou nome para listar corretamente os usuários reais
         const identificadorUsuario = dados.email || dados.nome || dados.displayName;
         if (identificadorUsuario && !nomes.includes(identificadorUsuario)) {
           nomes.push(identificadorUsuario);
@@ -241,7 +234,6 @@ export function PaginaFinancas() {
     };
   }, []);
 
-  // Filtragem de contas com base na busca
   const contasFiltradas = useMemo(() => {
     if (!termoBusca.trim()) return contas;
     const buscaLower = termoBusca.toLowerCase();
@@ -322,6 +314,134 @@ export function PaginaFinancas() {
       .map((cat) => ({ categoria: cat, valor: mapa[cat] || 0 }))
       .filter((c) => c.valor > 0);
   }, [contas]);
+
+  // Função para importar o CSV do Nubank diretamente pelo front-end
+  const importarCsvNubank = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const arquivo = e.target.files?.[0];
+    if (!arquivo) return;
+
+    const leitor = new FileReader();
+    leitor.onload = async (evento) => {
+      const conteudo = evento.target?.result as string;
+      const linhas = conteudo.split('\n');
+      let importadosCount = 0;
+
+      for (let i = 1; i < linhas.length; i++) {
+        const linha = linhas[i].trim();
+        if (!linha) continue;
+
+        const colunas = linha.split(',');
+        if (colunas.length < 3) continue;
+
+        const data = colunas[0].trim();
+        let titulo = colunas[1].replace(/"/g, '').trim();
+        const valorStr = colunas[2].replace(/"/g, '').replace('.', '').replace(',', '.');
+        const rawAmount = parseFloat(valorStr) || 0;
+
+        // Se for o pagamento recebido/compensado (ex: -1.557,44)
+        if (rawAmount < 0) {
+          await addDoc(collection(banco, 'contas'), {
+            descricao: `Pagamento de Fatura (${titulo})`,
+            categoria: 'Fatura de Cartão',
+            valor: Math.abs(rawAmount),
+            vencimento: data,
+            status: 'Paga',
+            fixa: false,
+            cartaoOrigem: 'Nubank',
+            ehParcelado: false,
+            numeroParcelas: 1,
+            parcelaAtual: 1,
+            valorParcela: Math.abs(rawAmount),
+            diaFechamento: '03',
+            diaVencimento: '10',
+            taxaJurosMes: 2.75,
+            responsavelId: '',
+            responsavelNome: 'Sistema / Fatura',
+          });
+          continue;
+        }
+
+        // Detecção de parcelamento no título (ex: " - 1/5" ou " - Parcela 6/6")
+        let ehParcelado = false;
+        let parcelaAtual = 1;
+        let numeroParcelas = 1;
+
+        const matchSlash = titulo.match(/\s*-\s*(\d+)\/(\d+)$/);
+        const matchParcela = titulo.match(/Parcela\s+(\d+)\/(\d+)/i);
+
+        if (matchSlash) {
+          ehParcelado = true;
+          parcelaAtual = parseInt(matchSlash[1], 10);
+          numeroParcelas = parseInt(matchSlash[2], 10);
+          titulo = titulo.replace(matchSlash[0], '').trim();
+        } else if (matchParcela) {
+          ehParcelado = true;
+          parcelaAtual = parseInt(matchParcela[1], 10);
+          numeroParcelas = parseInt(matchParcela[2], 10);
+          titulo = titulo.replace(matchParcela[0], '').trim();
+        }
+
+        // Classificação automática por categoria
+        let categoria: Conta['categoria'] = 'Compras Online';
+        const tLower = titulo.toLowerCase();
+        if (tLower.includes('claro') || tLower.includes('net') || tLower.includes('telecom')) categoria = 'Internet';
+        else if (tLower.includes('corsan')) categoria = 'Água';
+        else if (tLower.includes('uber') || tLower.includes('viasul') || tLower.includes('farmacia')) categoria = 'Outros';
+
+        const valorParcela = rawAmount;
+        const valorTotalCalculado = ehParcelado ? valorParcela * numeroParcelas : valorParcela;
+
+        await addDoc(collection(banco, 'contas'), {
+          descricao: titulo,
+          categoria: categoria,
+          valor: valorTotalCalculado,
+          vencimento: data,
+          status: 'Pendente',
+          fixa: false,
+          cartaoOrigem: 'Nubank',
+          ehParcelado: ehParcelado,
+          numeroParcelas: numeroParcelas,
+          parcelaAtual: parcelaAtual,
+          valorParcela: valorParcela,
+          diaFechamento: '03',
+          diaVencimento: '10',
+          taxaJurosMes: 2.75,
+          responsavelId: '',
+          responsavelNome: 'Não atribuído',
+        });
+
+        importadosCount++;
+      }
+
+      alert(`Sucesso! ${importadosCount} lançamentos do Nubank foram importados e organizados.`);
+    };
+
+    leitor.readAsText(arquivo);
+  };
+
+  // Função para avançar o ciclo da fatura do Nubank (Paga contas à vista e incrementa parcelas)
+  const avancarFaturaNubank = async () => {
+    if (!confirm("Deseja fechar/avançar o ciclo da fatura do Nubank? As compras à vista pagas serão removidas e as parcelas ativas avançarão para o próximo mês.")) return;
+
+    for (const c of contas) {
+      if (c.cartaoOrigem === 'Nubank') {
+        if (c.status === 'Paga' && !c.ehParcelado) {
+          await deleteDoc(doc(banco, 'contas', c.id));
+        } else if (c.ehParcelado && c.status === 'Paga') {
+          const proximaParcela = c.parcelaAtual + 1;
+          if (proximaParcela > c.numeroParcelas) {
+            await deleteDoc(doc(banco, 'contas', c.id)); // Quitada e finalizada
+          } else {
+            await updateDoc(doc(banco, 'contas', c.id), {
+              parcelaAtual: proximaParcela,
+              status: 'Pendente'
+            });
+          }
+        }
+      }
+    }
+    alert("Ciclo da fatura avançado com sucesso!");
+  };
 
   const salvarConta = async () => {
     if (!descricao.trim() || !valor) return;
@@ -515,16 +635,26 @@ export function PaginaFinancas() {
             Finanças e Faturas de Cartão
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            Gestão inteligente de cartões, regras institucionais personalizáveis, parcelas e encargos.
+            Gestão inteligente de cartões, importação de extratos, parcelas e encargos.
           </p>
         </div>
-        <button
-          onClick={() => setModalRegrasAberto(true)}
-          className="botao-secundario flex items-center gap-1.5 text-xs self-start"
-        >
-          <Info size={16} className="text-teal-600" />
-          Regras e Taxas dos Bancos
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={avancarFaturaNubank}
+            className="botao-secundario flex items-center gap-1.5 text-xs"
+            title="Avança as parcelas pagas e limpa compras à vista"
+          >
+            <RefreshCw size={16} className="text-teal-600" />
+            Avançar Fatura Nubank
+          </button>
+          <button
+            onClick={() => setModalRegrasAberto(true)}
+            className="botao-secundario flex items-center gap-1.5 text-xs"
+          >
+            <Info size={16} className="text-teal-600" />
+            Regras e Taxas
+          </button>
+        </div>
       </div>
 
       {Object.keys(relatorioCartoes).length > 0 && (
@@ -540,7 +670,7 @@ export function PaginaFinancas() {
                   className="badge bg-teal-50 hover:bg-teal-100 text-teal-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
                   title="Clique para alterar fechamento e vencimento"
                 >
-                  <Settings size={12} /> Regras Gerais Ativas
+                  <Settings size={12} /> Regras Gerais
                 </button>
               </div>
               <div className="pt-2">
@@ -626,19 +756,26 @@ export function PaginaFinancas() {
             className="botao-primario"
           >
             <Plus size={18} />
-            Adicionar conta ou fatura
+            Adicionar conta
           </button>
+
+          {/* Botão para Importar o CSV do Nubank */}
+          <label className="botao-secundario cursor-pointer flex items-center gap-1.5">
+            <Upload size={18} className="text-teal-600" />
+            Importar CSV Nubank
+            <input type="file" accept=".csv" onChange={importarCsvNubank} className="hidden" />
+          </label>
+
           <button onClick={() => setModalDividaAberto(true)} className="botao-secundario">
             <Calculator size={18} />
-            Simulador empréstimo
+            Simulador
           </button>
           <button onClick={gerarPdf} className="botao-secundario">
             <FileText size={18} />
-            Exportar PDF
+            PDF
           </button>
         </div>
 
-        {/* Campo de Busca / Filtro por Nome ou Compra */}
         <div className="relative w-full sm:w-72">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -751,96 +888,83 @@ export function PaginaFinancas() {
         </div>
       )}
 
-      {/* === Modal para Editar Configurações do Cartão (Fechamento / Vencimento / Juros) === */}
+      {/* Modal Configuração de Cartão */}
       <Modal
         aberto={modalConfigCartaoAberto}
         onFechar={() => setModalConfigCartaoAberto(false)}
         titulo={`Configurar Cartão: ${cartaoEditandoConfig}`}
       >
         <div className="space-y-4">
-          <p className="text-xs text-slate-300">
-            Altere abaixo os dias padrão de fechamento, vencimento e taxa de juros rotativo para o cartão <strong>{cartaoEditandoConfig}</strong>.
-          </p>
-
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-white mb-1">Dia do Fechamento</label>
               <input
                 type="text"
-                placeholder="Ex: 03"
                 value={novoFechamento}
                 onChange={(e) => setNovoFechamento(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
               />
             </div>
             <div>
               <label className="block text-xs font-bold text-white mb-1">Dia do Vencimento</label>
               <input
                 type="text"
-                placeholder="Ex: 10"
                 value={novoVencimento}
                 onChange={(e) => setNovoVencimento(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
               />
             </div>
           </div>
-
           <div>
             <label className="block text-xs font-bold text-white mb-1">Taxa de Juros Rotativo (% ao mês)</label>
             <input
               type="text"
-              inputMode="decimal"
-              placeholder="Ex: 2.75"
               value={novoJuros}
               onChange={(e) => setNovoJuros(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+              className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
             />
           </div>
-
           <button onClick={salvarConfigCartao} className="botao-primario w-full">
-            Salvar configurações do cartão
+            Salvar configurações
           </button>
         </div>
       </Modal>
 
-      {/* === Modal de Regras Globais e Taxas dos Bancos === */}
+      {/* Modal Regras Oficiais */}
       <Modal
         aberto={modalRegrasAberto}
         onFechar={() => setModalRegrasAberto(false)}
-        titulo="Regras Oficiais e Taxas dos Cartões"
+        titulo="Regras Oficiais e Taxas"
       >
         <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1 text-sm text-slate-200">
           <div className="p-3 bg-slate-800 rounded-xl border border-slate-700 space-y-2">
             <h3 className="font-bold text-teal-400 flex items-center gap-1.5">
-              <CreditCard size={16} /> Nubank (Padrão Institucional)
+              <CreditCard size={16} /> Nubank
             </h3>
             <ul className="list-disc list-inside space-y-1.5 text-xs text-slate-300">
-              <li><strong>Crédito Rotativo:</strong> Geralmente entre 2,75% e 19,99% ao mês (varia conforme perfil e entra em vigor ao pagar menos que o mínimo).</li>
-              <li><strong>Teto Legal da Dívida (BC):</strong> O total acumulado de juros e encargos do rotativo não pode ultrapassar 100% do valor original da dívida.</li>
-              <li><strong>Multa de Atraso:</strong> 2% fixo sobre o valor em atraso (por lei).</li>
-              <li><strong>Juros de Mora:</strong> 1% ao mês proporcional aos dias de atraso.</li>
-              <li><strong>Empréstimo Pessoal:</strong> Taxas personalizadas a partir de 1% a 2% ao mês dependendo do score.</li>
-              <li><strong>Saques na função crédito:</strong> Em torno de 9,75% ao mês + IOF.</li>
+              <li><strong>Rotativo:</strong> 2,75% a 19,99% ao mês.</li>
+              <li><strong>Teto Legal (BC):</strong> O acúmulo de juros não pode ultrapassar 100% da dívida original.</li>
+              <li><strong>Multa de Atraso:</strong> 2% fixo + Juros de mora de 1% ao mês.</li>
             </ul>
           </div>
         </div>
       </Modal>
 
-      {/* === Modal de conta / cartão / compra à vista ou parcelada === */}
+      {/* Modal Adicionar/Editar Conta */}
       <Modal
         aberto={modalContaAberto}
         onFechar={fecharModalConta}
-        titulo={editandoContaId ? 'Editar conta ou fatura' : 'Adicionar conta, cartão ou compra'}
+        titulo={editandoContaId ? 'Editar conta' : 'Adicionar conta ou compra'}
       >
         <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
           <div>
             <label className="block text-xs font-bold text-white mb-1">Descrição</label>
             <input
               type="text"
-              placeholder="Ex: Compra Shopee / Fatura Nubank / Luz"
+              placeholder="Ex: Fatura Nubank / Luz"
               value={descricao}
               onChange={(e) => setDescricao(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+              className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
               autoFocus
             />
           </div>
@@ -850,7 +974,7 @@ export function PaginaFinancas() {
               <select
                 value={categoria}
                 onChange={(e) => setCategoria(e.target.value as Conta['categoria'])}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
               >
                 {categoriasConta.map((cat) => (
                   <option key={cat} value={cat} className="bg-slate-800 text-white">{cat}</option>
@@ -862,11 +986,11 @@ export function PaginaFinancas() {
               <select
                 value={cartaoOrigem}
                 onChange={(e) => setCartaoOrigem(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
               >
                 {Object.keys(configCartoes).map((nomeC) => (
                   <option key={nomeC} value={nomeC} className="bg-slate-800 text-white">
-                    {nomeC} (Fech: {configCartoes[nomeC].fechamento} | Venc: {configCartoes[nomeC].vencimento})
+                    {nomeC}
                   </option>
                 ))}
               </select>
@@ -874,41 +998,38 @@ export function PaginaFinancas() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-white mb-1">Responsável pela Conta</label>
+            <label className="block text-xs font-bold text-white mb-1">Responsável</label>
             <select
               value={responsavelNome}
               onChange={(e) => setResponsavelNome(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+              className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
             >
               <option value="">Selecione um responsável...</option>
               {responsaveisBanco.map((resp: string) => (
-                <option key={resp} value={resp} className="bg-slate-800 text-white">
-                  {resp}
-                </option>
+                <option key={resp} value={resp} className="bg-slate-800 text-white">{resp}</option>
               ))}
             </select>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-white mb-1">Valor Total (R$)</label>
+              <label className="block text-xs font-bold text-white mb-1">Valor (R$)</label>
               <input
                 type="text"
-                inputMode="decimal"
-                placeholder="Ex: 1855,00"
+                placeholder="Ex: 150,00"
                 value={valor}
                 onChange={(e) => setValor(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-white mb-1">Vencimento (dd/mm/aaaa)</label>
+              <label className="block text-xs font-bold text-white mb-1">Vencimento</label>
               <input
                 type="text"
-                placeholder="Ex: 10/09/2026"
+                placeholder="Ex: 10/10/2026"
                 value={vencimento}
                 onChange={(e) => setVencimento(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
               />
             </div>
           </div>
@@ -919,22 +1040,14 @@ export function PaginaFinancas() {
               <button
                 type="button"
                 onClick={() => setTipoPagamento('a-vista')}
-                className={`flex-1 py-2 rounded-lg font-semibold text-xs transition-all ${
-                  tipoPagamento === 'a-vista'
-                    ? 'bg-teal-600 text-white shadow'
-                    : 'bg-slate-900 text-slate-300 border border-slate-700'
-                }`}
+                className={`flex-1 py-2 rounded-lg font-semibold text-xs ${tipoPagamento === 'a-vista' ? 'bg-teal-600 text-white' : 'bg-slate-900 text-slate-300'}`}
               >
                 À vista
               </button>
               <button
                 type="button"
                 onClick={() => setTipoPagamento('parcelado')}
-                className={`flex-1 py-2 rounded-lg font-semibold text-xs transition-all ${
-                  tipoPagamento === 'parcelado'
-                    ? 'bg-teal-600 text-white shadow'
-                    : 'bg-slate-900 text-slate-300 border border-slate-700'
-                }`}
+                className={`flex-1 py-2 rounded-lg font-semibold text-xs ${tipoPagamento === 'parcelado' ? 'bg-teal-600 text-white' : 'bg-slate-900 text-slate-300'}`}
               >
                 Parcelado
               </button>
@@ -947,10 +1060,9 @@ export function PaginaFinancas() {
                   <input
                     type="number"
                     min="1"
-                    placeholder="Ex: 6"
                     value={parcelaAtual}
                     onChange={(e) => setParcelaAtual(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-900 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-900 text-white text-sm"
                   />
                 </div>
                 <div>
@@ -958,14 +1070,13 @@ export function PaginaFinancas() {
                   <input
                     type="number"
                     min="1"
-                    placeholder="Ex: 10"
                     value={numeroParcelas}
                     onChange={(e) => setNumeroParcelas(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-900 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-900 text-white text-sm"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-white mb-1">Valor da Parcela</label>
+                  <label className="block text-xs font-bold text-white mb-1">Valor Parcela</label>
                   <div className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-900 text-white text-sm font-semibold flex items-center">
                     {formatarMoeda((converterParaNumero(valor) / (parseInt(numeroParcelas, 10) || 1)))}
                   </div>
@@ -978,106 +1089,85 @@ export function PaginaFinancas() {
             <button
               type="button"
               onClick={() => setStatusConta('Pendente')}
-              className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                statusConta === 'Pendente' ? 'bg-amber-500 text-white' : 'bg-slate-800 text-slate-300 border border-slate-700'
-              }`}
+              className={`flex-1 py-2 rounded-xl font-semibold text-sm ${statusConta === 'Pendente' ? 'bg-amber-500 text-white' : 'bg-slate-800 text-slate-300'}`}
             >
               Pendente
             </button>
             <button
               type="button"
               onClick={() => setStatusConta('Paga')}
-              className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                statusConta === 'Paga' ? 'bg-green-600 text-white' : 'bg-slate-800 text-slate-300 border border-slate-700'
-              }`}
+              className={`flex-1 py-2 rounded-xl font-semibold text-sm ${statusConta === 'Paga' ? 'bg-green-600 text-white' : 'bg-slate-800 text-slate-300'}`}
             >
               Paga
             </button>
           </div>
 
-          <label className="flex items-center gap-2 text-sm font-bold text-white cursor-pointer">
-            <input
-              type="checkbox"
-              checked={fixa}
-              onChange={(e) => setFixa(e.target.checked)}
-              className="w-4 h-4 rounded accent-teal-600"
-            />
-            Conta fixa mensal
-          </label>
-
           <button onClick={salvarConta} className="botao-primario w-full">
-            {editandoContaId ? 'Salvar alterações' : 'Adicionar conta / fatura'}
+            {editandoContaId ? 'Salvar alterações' : 'Adicionar conta'}
           </button>
         </div>
       </Modal>
 
-      {/* === Modal de simulador de empréstimo === */}
+      {/* Modal Simulador */}
       <Modal
         aberto={modalDividaAberto}
         onFechar={fecharModalDivida}
-        titulo="Simulador de Empréstimo / Fatura Parcelada"
+        titulo="Simulador de Empréstimo"
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-white mb-1">Descrição do Empréstimo / Dívida</label>
+            <label className="block text-xs font-bold text-white mb-1">Descrição</label>
             <input
               type="text"
-              placeholder="Ex: Empréstimo Pessoal"
               value={descDivida}
               onChange={(e) => setDescDivida(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+              className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
               autoFocus
             />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-bold text-white mb-1">Valor (R$)</label>
+              <label className="block text-xs font-bold text-white mb-1">Valor</label>
               <input
                 type="text"
-                inputMode="decimal"
-                placeholder="Ex: 5000"
                 value={valorDivida}
                 onChange={(e) => setValorDivida(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
               />
             </div>
             <div>
               <label className="block text-xs font-bold text-white mb-1">Juros (%/mês)</label>
               <input
                 type="text"
-                inputMode="decimal"
-                placeholder="Ex: 3.5"
                 value={jurosDivida}
                 onChange={(e) => setJurosDivida(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
               />
             </div>
             <div>
               <label className="block text-xs font-bold text-white mb-1">Parcelas</label>
               <input
                 type="text"
-                inputMode="numeric"
-                placeholder="Ex: Fech 03 / Venc 10"
                 value={parcelasDivida}
                 onChange={(e) => setParcelasDivida(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
               />
             </div>
           </div>
           {resultadoDivida && (
             <div className="bg-slate-800 rounded-xl p-4 space-y-2 text-sm border border-slate-700">
               <div className="flex justify-between">
-                <span className="text-slate-300">Valor da parcela:</span>
+                <span className="text-slate-300">Parcela:</span>
                 <span className="font-bold text-teal-400">{formatarMoeda(resultadoDivida.pmt)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-300">Total a pagar:</span>
+                <span className="text-slate-300">Total:</span>
                 <span className="font-bold text-white">{formatarMoeda(resultadoDivida.total)}</span>
               </div>
             </div>
           )}
           <button onClick={salvarDivida} className="botao-primario w-full">
-            Salvar empréstimo no sistema
+            Salvar empréstimo
           </button>
         </div>
       </Modal>
