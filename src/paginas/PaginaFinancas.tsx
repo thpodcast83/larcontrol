@@ -1,7 +1,7 @@
 /**
  * PaginaFinancas.tsx
  * -----------------------------------------------------------------------------
- * Módulo de Finanças com Controle de Acesso por E-mail e Exportação CSV/PDF.
+ * Módulo de Finanças com Controle de Acesso por Usuário e Exportação CSV/PDF.
  * -----------------------------------------------------------------------------
  */
 import { useEffect, useState, useMemo } from 'react';
@@ -12,7 +12,6 @@ import {
   updateDoc,
   deleteDoc,
   doc,
-  setDoc,
 } from 'firebase/firestore';
 import { banco, auth } from '@/firebase';
 import type { Conta, Divida } from '@/tipos';
@@ -27,15 +26,11 @@ import {
   AlertCircle,
   CheckCircle,
   CreditCard,
-  Calculator,
   Pencil,
   Search,
   X,
-  Info,
-  Settings,
   UserCheck,
   Download,
-  Lock,
 } from 'lucide-react';
 
 const categoriasConta = [
@@ -112,24 +107,12 @@ export function PaginaFinancas() {
   const [configCartoes, setConfigCartoes] = useState<Record<string, RegraCartao>>({});
   const [responsaveisBanco, setResponsaveisBanco] = useState<string[]>([]);
   
-  // Controle de filtro por usuário
-  const [apenasMinhasFinancas, setApenasMinhasFinancas] = useState(false);
+  // Controle de filtro por usuário (Inicia ativo para mostrar apenas as finanças do usuário logado)
+  const [apenasMinhasFinancas, setApenasMinhasFinancas] = useState(true);
   const usuarioAtual = auth.currentUser;
 
-  // CORRIGIDO: Nome da variável alterado de e-mailBloqueado para emailBloqueado (sem hífen)
-  const emailBloqueado = usuarioAtual?.email === 'thpodcast83@gmail.com';
-
   const [modalContaAberto, setModalContaAberto] = useState(false);
-  const [modalDividaAberto, setModalDividaAberto] = useState(false);
-  const [modalRegrasAberto, setModalRegrasAberto] = useState(false);
-  const [modalConfigCartaoAberto, setModalConfigCartaoAberto] = useState(false);
-
   const [editandoContaId, setEditandoContaId] = useState<string | null>(null);
-  const [cartaoEditandoConfig, setCartaoEditandoConfig] = useState<string>('Nubank');
-
-  const [novoFechamento, setNovoFechamento] = useState('3');
-  const [novoVencimento, setNovoVencimento] = useState('10');
-  const [novoJuros, setNovoJuros] = useState('2.75');
 
   const [termoBusca, setTermoBusca] = useState('');
 
@@ -412,20 +395,6 @@ export function PaginaFinancas() {
     );
   };
 
-  if (emailBloqueado) {
-    return (
-      <div className="cartao text-center py-16 space-y-4 max-w-lg mx-auto mt-10">
-        <div className="bg-red-50 dark:bg-red-950/30 text-red-600 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto">
-          <Lock size={32} />
-        </div>
-        <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Acesso Restrito às Finanças</h2>
-        <p className="text-sm text-slate-500">
-          A aba de finanças e cartões é restrita aos moradores autorizados. O usuário atual ({usuarioAtual?.email}) não possui permissão para visualizar estas informações pessoais.
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -666,7 +635,7 @@ export function PaginaFinancas() {
                 placeholder="Ex: 150,00"
                 value={valor}
                 onChange={(e) => setValor(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-white text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
               />
             </div>
             <div>
