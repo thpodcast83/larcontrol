@@ -2,7 +2,6 @@
  * PaginaFinancas.tsx
  * -----------------------------------------------------------------------------
  * Módulo de Saúde Financeira, Cartões, Faturas Parceladas e Empréstimos.
- * Inclui contagem de compras à vista/parceladas e isolamento de pagamentos.
  * -----------------------------------------------------------------------------
  */
 import { useEffect, useState, useMemo, useRef } from 'react';
@@ -247,7 +246,6 @@ export function PaginaFinancas() {
     return lista;
   }, [contasDoUsuario, termoBusca]);
 
-  // Filtro essencial: descarta lançamentos de pagamento de fatura para não somarem como gasto
   const contasDespesasReais = useMemo(() => {
     return contasDoUsuario.filter((c) => !c.descricao.toLowerCase().includes('pagamento de fatura'));
   }, [contasDoUsuario]);
@@ -264,7 +262,6 @@ export function PaginaFinancas() {
 
   const totalGeral = useMemo(() => contasDespesasReais.reduce((acc, c) => acc + (c.valorParcela || c.valor), 0), [contasDespesasReais]);
 
-  // Contagem de compras à vista e parceladas
   const estatisticasCompras = useMemo(() => {
     let aVista = 0;
     let parceladas = 0;
@@ -791,7 +788,7 @@ export function PaginaFinancas() {
               className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
             />
           </div>
-          <button onClick={salvalRegraCartaoProxy} className="botao-primario w-full" onClick={salvarConfigCartao}>
+          <button onClick={salvarConfigCartao} className="botao-primario w-full">
             Salvar Regras
           </button>
         </div>
