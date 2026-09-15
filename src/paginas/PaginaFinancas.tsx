@@ -116,8 +116,8 @@ export function PaginaFinancas() {
   const [apenasMinhasFinancas, setApenasMinhasFinancas] = useState(false);
   const usuarioAtual = auth.currentUser;
 
-  // BLOQUEIO ESPECÍFICO DE E-MAIL (Ex: thpodcast83@gmail.com sem acesso às finanças)
-  const e-mailBloqueado = usuarioAtual?.email === 'thpodcast83@gmail.com';
+  // CORRIGIDO: Nome da variável alterado de e-mailBloqueado para emailBloqueado (sem hífen)
+  const emailBloqueado = usuarioAtual?.email === 'thpodcast83@gmail.com';
 
   const [modalContaAberto, setModalContaAberto] = useState(false);
   const [modalDividaAberto, setModalDividaAberto] = useState(false);
@@ -366,15 +366,6 @@ export function PaginaFinancas() {
     setModalContaAberto(true);
   };
 
-  const abrirConfigCartao = (nomeCartao: string) => {
-    setCartaoEditandoConfig(nomeCartao);
-    const atual = configCartoes[nomeCartao] || regrasPadraoIniciais[nomeCartao] || { fechamento: '3', vencimento: '10', jurosMes: 2.75 };
-    setNovoFechamento(atual.fechamento);
-    setNovoVencimento(atual.vencimento);
-    setNovoJuros(String(atual.jurosMes));
-    setModalConfigCartaoAberto(true);
-  };
-
   const exportarCsv = () => {
     const cabecalho = ['ID', 'Descricao', 'Categoria', 'Responsavel', 'Origem', 'Vencimento', 'Status', 'Valor'];
     const linhas = contasFiltradas.map((c) => [
@@ -421,8 +412,7 @@ export function PaginaFinancas() {
     );
   };
 
-  // Se o e-mail for o bloqueado, exibe uma tela amigável restrita
-  if (e-mailBloqueado) {
+  if (emailBloqueado) {
     return (
       <div className="cartao text-center py-16 space-y-4 max-w-lg mx-auto mt-10">
         <div className="bg-red-50 dark:bg-red-950/30 text-red-600 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto">
@@ -676,7 +666,7 @@ export function PaginaFinancas() {
                 placeholder="Ex: 150,00"
                 value={valor}
                 onChange={(e) => setValor(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm"
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white text-white text-sm"
               />
             </div>
             <div>
