@@ -2,7 +2,7 @@
  * PaginaFinancas.tsx
  * -----------------------------------------------------------------------------
  * Módulo de Saúde Financeira, Cartões, Faturas Parceladas e Empréstimos.
- * Integrado com Importação Automática de CSV do Nubank e Gestão de Ciclos.
+ * Corrigido para não somar o Pagamento de Fatura no total de gastos/compras.
  * -----------------------------------------------------------------------------
  */
 import { useEffect, useState, useMemo } from 'react';
@@ -246,9 +246,14 @@ export function PaginaFinancas() {
     );
   }, [contas, termoBusca]);
 
+  // Contas ativas desconsiderando o registro de pagamento de fatura para os totais de gastos
+  const contasDespesasReais = useMemo(() => {
+    return contas.filter((c) => !c.descricao.toLowerCase().includes('pagamento de fatura'));
+  }, [contas]);
+
   const totalPendente = useMemo(
-    () => contas.filter((c) => c.status === 'Pendente').reduce((acc, c) => acc + (c.valorParcela || c.valor), 0),
-    [contas]
+    () => contasDespesasReais.filter((c) => c.status === 'Pendente').reduce((acc, c) => acc + (c.valorParcela || c.valor), 0),
+    [contasDespesasReais]
   );
 
   const totalPago = useMemo(
@@ -256,14 +261,14 @@ export function PaginaFinancas() {
     [contas]
   );
 
-  const totalGeral = useMemo(() => contas.reduce((acc, c) => acc + (c.valorParcela || c.valor), 0), [contas]);
+  const totalGeral = useMemo(() => contasDespesasReais.reduce((acc, c) => acc + (c.valorParcela || c.valor), 0), [contasDespesasReais]);
 
   const relatorioCartoes = useMemo(() => {
     const mapa: Record<string, { totalFatura: number, parcelamentos: any[], vencimento: string, fechamento: string, jurosEstimado: number }> = {};
     const hoje = new Date();
 
-    contas.forEach((c) => {
-      if (c.categoria === 'Fatura de Cartão' || c.categoria === 'Compras Online' || c.categoria === 'Empréstimo') {
+    contasDespesasReais.forEach((c) => {
+      if (c.categoria === 'Fatura de Cartão' || c.categoria === 'Compras Online' || c.categoria === 'Empréstimo' || c.categoria === 'Internet' || c.categoria === 'Água' || c.categoria === 'Outros') {
         const nomeCartao = c.cartaoOrigem || 'Geral';
         const regraGlobal = configCartoes[nomeCartao] || configCartoes['Outros'] || { fechamento: '3', vencimento: '10', jurosMes: 2.75 };
 
@@ -302,20 +307,19 @@ export function PaginaFinancas() {
     });
 
     return mapa;
-  }, [contas, configCartoes]);
+  }, [contasDespesasReais, configCartoes]);
 
   const gastosPorCategoria = useMemo(() => {
     const mapa: Record<string, number> = {};
-    contas.forEach((c) => {
+    contasDespesasReais.forEach((c) => {
       const val = c.valorParcela || c.valor;
       mapa[c.categoria] = (mapa[c.categoria] || 0) + val;
     });
     return categoriasConta
       .map((cat) => ({ categoria: cat, valor: mapa[cat] || 0 }))
       .filter((c) => c.valor > 0);
-  }, [contas]);
+  }, [contasDespesasReais]);
 
-  // Função para importar o CSV do Nubank diretamente pelo front-end
   const importarCsvNubank = (e: React.ChangeEvent<HTMLInputElement>) => {
     const arquivo = e.target.files?.[0];
     if (!arquivo) return;
@@ -338,7 +342,6 @@ export function PaginaFinancas() {
         const valorStr = colunas[2].replace(/"/g, '').replace('.', '').replace(',', '.');
         const rawAmount = parseFloat(valorStr) || 0;
 
-        // Se for o pagamento recebido/compensado (ex: -1.557,44)
         if (rawAmount < 0) {
           await addDoc(collection(banco, 'contas'), {
             descricao: `Pagamento de Fatura (${titulo})`,
@@ -361,7 +364,6 @@ export function PaginaFinancas() {
           continue;
         }
 
-        // Detecção de parcelamento no título (ex: " - 1/5" ou " - Parcela 6/6")
         let ehParcelado = false;
         let parcelaAtual = 1;
         let numeroParcelas = 1;
@@ -381,7 +383,6 @@ export function PaginaFinancas() {
           titulo = titulo.replace(matchParcela[0], '').trim();
         }
 
-        // Classificação automática por categoria
         let categoria: Conta['categoria'] = 'Compras Online';
         const tLower = titulo.toLowerCase();
         if (tLower.includes('claro') || tLower.includes('net') || tLower.includes('telecom')) categoria = 'Internet';
@@ -419,7 +420,6 @@ export function PaginaFinancas() {
     leitor.readAsText(arquivo);
   };
 
-  // Função para avançar o ciclo da fatura do Nubank (Paga contas à vista e incrementa parcelas)
   const avancarFaturaNubank = async () => {
     if (!confirm("Deseja fechar/avançar o ciclo da fatura do Nubank? As compras à vista pagas serão removidas e as parcelas ativas avançarão para o próximo mês.")) return;
 
@@ -430,7 +430,7 @@ export function PaginaFinancas() {
         } else if (c.ehParcelado && c.status === 'Paga') {
           const proximaParcela = c.parcelaAtual + 1;
           if (proximaParcela > c.numeroParcelas) {
-            await deleteDoc(doc(banco, 'contas', c.id)); // Quitada e finalizada
+            await deleteDoc(doc(banco, 'contas', c.id));
           } else {
             await updateDoc(doc(banco, 'contas', c.id), {
               parcelaAtual: proximaParcela,
@@ -759,7 +759,6 @@ export function PaginaFinancas() {
             Adicionar conta
           </button>
 
-          {/* Botão para Importar o CSV do Nubank */}
           <label className="botao-secundario cursor-pointer flex items-center gap-1.5">
             <Upload size={18} className="text-teal-600" />
             Importar CSV Nubank
