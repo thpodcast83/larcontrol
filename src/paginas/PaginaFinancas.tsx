@@ -2,7 +2,7 @@
  * PaginaFinancas.tsx
  * -----------------------------------------------------------------------------
  * Módulo de Saúde Financeira, Cartões, Faturas Parceladas e Empréstimos.
- * Com controle de acesso por usuário baseado no e-mail autenticado.
+ * Integrado com o ContextoAuth para controle de acesso por usuário.
  * -----------------------------------------------------------------------------
  */
 import { useEffect, useState, useMemo } from 'react';
@@ -15,8 +15,8 @@ import {
   doc,
   setDoc,
 } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth'; // Importado para pegar o usuário logado
 import { banco } from '@/firebase';
+import { useAuth } from '@/contextos/ContextoAuth'; // Importação do contexto de autenticação
 import type { Conta, Divida } from '@/tipos';
 import { formatarMoeda } from '@/utils/utilFormato';
 import { gerarPdfGenerico } from '@/utils/utilPdf';
@@ -26,18 +26,14 @@ import {
   Plus,
   Trash2,
   FileText,
-  TrendingDown,
   AlertCircle,
   CheckCircle,
   CreditCard,
   Calculator,
   Pencil,
   Search,
-  X,
   Info,
   Settings,
-  Upload,
-  RefreshCw,
 } from 'lucide-react';
 
 const categoriasConta = [
@@ -77,21 +73,21 @@ const regrasPadraoIniciais: Record<string, Omit<RegraCartao, 'id'>> = {
     fechamento: '03',
     vencimento: '10',
     jurosMes: 2.75,
-    descricaoRegra: 'Rotativo de 2,75% a 19,99% a.m. Multa de 2% por atraso + Juros de mora de 1% a.m. Respeita o teto de 100% do valor da dívida (Regra do Banco Central).',
+    descricaoRegra: 'Rotativo de 2,75% a 19,99% a.m. Multa de 2% por atraso + Juros de mora de 1% a.m.',
   },
   Shopee: {
     nome: 'Shopee',
     fechamento: '10',
     vencimento: '20',
     jurosMes: 5.9,
-    descricaoRegra: 'Cartão co-branded com regras de juros e parcelamento específicos da parceira.',
+    descricaoRegra: 'Cartão co-branded com regras de juros e parcelamento específicos.',
   },
   Itaú: {
     nome: 'Itaú',
     fechamento: '1',
     vencimento: '10',
     jurosMes: 9.9,
-    descricaoRegra: 'Rotativo padrão de mercado e encargos por atraso conforme contrato do banco.',
+    descricaoRegra: 'Rotativo padrão de mercado e encargos por atraso conforme contrato.',
   },
   Outros: {
     nome: 'Outros',
@@ -109,21 +105,20 @@ function converterParaNumero(val: string): number {
 }
 
 export function PaginaFinancas() {
-  const auth = getAuth();
-  const usuarioAtual = auth.currentUser;
-  const emailUsuarioLogado = usuarioAtual?.email || '';
+  const { usuario } = useAuth(); // Obtém o usuário logado via ContextoAuth
+  const emailUsuarioLogado = usuario?.email || '';
+  const nomeUsuarioLogado = usuario?.nome || '';
 
   const [contas, setContas] = useState<Conta[]>([]);
   const [dividas, setDividas] = useState<Divida[]>([]);
   const [configCartoes, setConfigCartoes] = useState<Record<string, RegraCartao>>({});
-  
-  const [responsaveisBanco, setResponsaveisBanco] = useState<string[]>(sch => sch);
-  
+  const [responsaveisBanco, setResponsaveisBanco] = useState<string[]>([]);
+
   const [modalContaAberto, setModalContaAberto] = useState(false);
   const [modalDividaAberto, setModalDividaAberto] = useState(false);
   const [modalRegrasAberto, setModalRegrasAberto] = useState(false);
   const [modalConfigCartaoAberto, setModalConfigCartaoAberto] = useState(false);
-  
+
   const [editandoContaId, setEditandoContaId] = useState<string | null>(null);
   const [cartaoEditandoConfig, setCartaoEditandoConfig] = useState<string>('Nubank');
 
@@ -150,6 +145,13 @@ export function PaginaFinancas() {
   const [valorDivida, setValorDivida] = useState('');
   const [jurosDivida, setJurosDivida] = useState('');
   const [parcelasDivida, setParcelasDivida] = useState('');
+
+  useEffect(() => {
+    // Sincroniza o estado inicial do responsável caso o usuário demore alguns ms para carregar
+    if (emailUsuarioLogado && !responsavelNome) {
+      setResponsavelNome(emailUsuarioLogado);
+    }
+  }, [emailUsuarioLogado]);
 
   useEffect(() => {
     const cancelarContas = onSnapshot(collection(banco, 'contas'), (snapshot) => {
@@ -197,7 +199,6 @@ export function PaginaFinancas() {
 
     const cancelarConfig = onSnapshot(collection(banco, 'config_cartoes'), (snapshot) => {
       const configsMap: Record<string, RegraCartao> = {};
-      
       Object.entries(regrasPadraoIniciais).forEach(([k, v]) => {
         configsMap[k] = { id: k, ...v };
       });
@@ -215,40 +216,28 @@ export function PaginaFinancas() {
           };
         }
       });
-
       setConfigCartoes(configsMap);
-    });
-
-    const cancelarUsuarios = onSnapshot(collection(banco, 'users'), (snapshot) => {
-      const nomes: string[] = [];
-      snapshot.forEach((docSnap) => {
-        const dados = docSnap.data();
-        const identificadorUsuario = dados.email || dados.nome || dados.displayName;
-        if (identificadorUsuario && !nomes.includes(identificadorUsuario)) {
-          nomes.push(identificadorUsuario);
-        }
-      });
-      setResponsaveisBanco(nomes);
     });
 
     return () => {
       cancelarContas();
       cancelarDividas();
       cancelarConfig();
-      cancelarUsuarios();
     };
   }, []);
 
-  // FILTRAGEM POR USUÁRIO LOGADO (E-mail)
+  // FILTRAGEM POR USUÁRIO LOGADO (E-mail ou Nome associado)
   const contasDoUsuario = useMemo(() => {
     if (!emailUsuarioLogado) return contas;
-    // Retorna apenas faturas/contas onde o responsável bate com o e-mail do usuário logado
-    // (ou se não tiver responsável definido e quisermos exibir, mas por segurança restringe ao e-mail)
     return contas.filter((c) => {
       const resp = (c.responsavelNome || '').toLowerCase();
-      return resp === emailUsuarioLogado.toLowerCase() || resp === '';
+      return (
+        resp === emailUsuarioLogado.toLowerCase() ||
+        resp === nomeUsuarioLogado.toLowerCase() ||
+        resp === ''
+      );
     });
-  }, [contas, emailUsuarioLogado]);
+  }, [contas, emailUsuarioLogado, nomeUsuarioLogado]);
 
   const contasFiltradas = useMemo(() => {
     let lista = contasDoUsuario;
@@ -282,7 +271,7 @@ export function PaginaFinancas() {
   const totalGeral = useMemo(() => contasDespesasReais.reduce((acc, c) => acc + (c.valorParcela || c.valor), 0), [contasDespesasReais]);
 
   const relatorioCartoes = useMemo(() => {
-    const mapa: Record<string, { totalFatura: number, parcelamentos: any[], vencimento: string, fechamento: string, jurosEstimado: number }> = {};
+    const mapa: Record<string, { totalFatura: number; parcelamentos: any[]; vencimento: string; fechamento: string; jurosEstimado: number }> = {};
     const hoje = new Date();
 
     contasDespesasReais.forEach((c) => {
@@ -306,37 +295,11 @@ export function PaginaFinancas() {
         if (c.ehParcelado && c.numeroParcelas && c.numeroParcelas > 1) {
           mapa[nomeCartao].parcelamentos.push(c);
         }
-
-        if (c.status === 'Pendente' && c.vencimento) {
-          const partesVenc = c.vencimento.split('/');
-          if (partesVenc.length === 3) {
-            const dataVencObj = new Date(parseInt(partesVenc[2]), parseInt(partesVenc[1]) - 1, parseInt(partesVenc[0]));
-            if (hoje > dataVencObj) {
-              const diffDias = Math.ceil((hoje.getTime() - dataVencObj.getTime()) / (1000 * 60 * 60 * 24));
-              const taxaMes = regraGlobal.jurosMes;
-              const jurosDia = (taxaMes / 100) / 30;
-              const multaAtraso = valParcela * 0.02;
-              const valorJurosMora = valParcela * jurosDia * diffDias;
-              mapa[nomeCartao].jurosEstimado += (multaAtraso + valorJurosMora);
-            }
-          }
-        }
       }
     });
 
     return mapa;
   }, [contasDespesasReais, configCartoes]);
-
-  const gastosPorCategoria = useMemo(() => {
-    const mapa: Record<string, number> = {};
-    contasDespesasReais.forEach((c) => {
-      const val = c.valorParcela || c.valor;
-      mapa[c.categoria] = (mapa[c.categoria] || 0) + val;
-    });
-    return categoriasConta
-      .map((cat) => ({ categoria: cat, valor: mapa[cat] || 0 }))
-      .filter((c) => c.valor > 0);
-  }, [contasDespesasReais]);
 
   const salvarConta = async () => {
     if (!descricao.trim() || !valor) return;
@@ -364,7 +327,7 @@ export function PaginaFinancas() {
       diaFechamento: regraGlobal.fechamento,
       diaVencimento: regraGlobal.vencimento,
       taxaJurosMes: regraGlobal.jurosMes,
-      responsavelId: usuarioAtual?.uid || '', 
+      responsavelId: usuario?.uid || '',
       responsavelNome: responsavelNome || emailUsuarioLogado || 'Não atribuído',
     };
 
@@ -492,10 +455,6 @@ export function PaginaFinancas() {
     setModalDividaAberto(false);
   };
 
-  const removerDivida = async (id: string) => {
-    await deleteDoc(doc(banco, 'dividas', id));
-  };
-
   const gerarPdf = () => {
     const colunas = ['Descrição', 'Categoria', 'Responsável', 'Origem', 'Vencimento', 'Status', 'Valor'];
     const linhas = contasFiltradas.map((c) => [
@@ -519,8 +478,6 @@ export function PaginaFinancas() {
     );
   };
 
-  const resultadoDivida = calcularDivida();
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -530,17 +487,8 @@ export function PaginaFinancas() {
             Finanças e Faturas de Cartão
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            Visualizando finanças para: <strong className="text-teal-600">{emailUsuarioLogado || 'Usuário Geral'}</strong>
+            Visualizando finanças para: <strong className="text-teal-600">{emailUsuarioLogado || nomeUsuarioLogado || 'Usuário Geral'}</strong>
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setModalRegrasAberto(true)}
-            className="botao-secundario flex items-center gap-1.5 text-xs"
-          >
-            <Info size={16} className="text-teal-600" />
-            Regras e Taxas
-          </button>
         </div>
       </div>
 
@@ -676,7 +624,7 @@ export function PaginaFinancas() {
       >
         <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-1">
           <div>
-            <label className="block text-xs font-bold text-white mb-1">Descrição</label>
+            <label className="block text-xs font-bold text-slate-200 mb-1">Descrição</label>
             <input
               type="text"
               placeholder="Ex: Fatura Nubank / Luz"
@@ -687,7 +635,7 @@ export function PaginaFinancas() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-white mb-1">Categoria</label>
+              <label className="block text-xs font-bold text-slate-200 mb-1">Categoria</label>
               <select
                 value={categoria}
                 onChange={(e) => setCategoria(e.target.value as Conta['categoria'])}
@@ -699,7 +647,7 @@ export function PaginaFinancas() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-bold text-white mb-1">Cartão / Origem</label>
+              <label className="block text-xs font-bold text-slate-200 mb-1">Cartão / Origem</label>
               <select
                 value={cartaoOrigem}
                 onChange={(e) => setCartaoOrigem(e.target.value)}
@@ -715,7 +663,7 @@ export function PaginaFinancas() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-white mb-1">Responsável (E-mail)</label>
+            <label className="block text-xs font-bold text-slate-200 mb-1">Responsável (E-mail)</label>
             <input
               type="text"
               value={responsavelNome}
@@ -726,7 +674,7 @@ export function PaginaFinancas() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-white mb-1">Valor (R$)</label>
+              <label className="block text-xs font-bold text-slate-200 mb-1">Valor (R$)</label>
               <input
                 type="text"
                 placeholder="Ex: 150,00"
@@ -736,7 +684,7 @@ export function PaginaFinancas() {
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-white mb-1">Vencimento</label>
+              <label className="block text-xs font-bold text-slate-200 mb-1">Vencimento</label>
               <input
                 type="text"
                 placeholder="Ex: 10/10/2026"
