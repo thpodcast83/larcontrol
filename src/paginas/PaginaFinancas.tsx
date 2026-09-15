@@ -2,7 +2,7 @@
  * PaginaFinancas.tsx
  * -----------------------------------------------------------------------------
  * Módulo de Saúde Financeira, Cartões, Faturas Parceladas e Empréstimos.
- * Integrado com o ContextoAuth para controle de acesso por usuário e importação CSV.
+ * Integrado com o ContextoAuth para controle de acesso por usuário e importação CSV corrigida.
  * -----------------------------------------------------------------------------
  */
 import { useEffect, useState, useMemo, useRef } from 'react';
@@ -337,7 +337,7 @@ export function PaginaFinancas() {
     fecharModalConta();
   };
 
-  // FUNÇÃO DE PROCESSAMENTO DO ARQUIVO CSV
+  // FUNÇÃO DE UPLOAD DE CSV CORRIGIDA (TRATA VALORES NEGATIVOS COMO PAGAMENTOS)
   const lidarComUploadCsv = (event: React.ChangeEvent<HTMLInputElement>) => {
     const arquivo = event.target.files?.[0];
     if (!arquivo) return;
@@ -353,13 +353,12 @@ export function PaginaFinancas() {
         return;
       }
 
-      // Identifica o separador (vírgula ou ponto e vírgula)
       const primeiraLinha = linhas[0];
       const separador = primeiraLinha.includes(';') ? ';' : ',';
       const cabecalhos = primeiraLinha.split(separador).map((h) => h.trim().toLowerCase());
 
       const idxDescricao = cabecalhos.findIndex((h) => h.includes('desc') || h.includes('title') || h.includes('memo') || h.includes('titulo') || h.includes('historico'));
-      const idxValor = cabecalhos.findIndex((h) => h.includes('val') || h.includes('amount')  || h.includes('quantia') || h.includes('preco'));
+      const idxValor = cabecalhos.findIndex((h) => h.includes('val') || h.includes('amount') || h.includes('quantia') || h.includes('preco'));
       const idxData = cabecalhos.findIndex((h) => h.includes('data') || h.includes('date') || h.includes('venc') || h.includes('due'));
 
       let itensImportados = 0;
@@ -374,23 +373,24 @@ export function PaginaFinancas() {
         const valStr = idxValor !== -1 ? colunas[idxValor] : (colunas[1] || '0');
         const venc = idxData !== -1 ? colunas[idxData] : 'Não informado';
 
-        const valorNum = Math.abs(converterParaNumero(valStr));
-        if (valorNum <= 0) continue;
+        const valorNum = converterParaNumero(valStr);
+        if (valorNum === 0) continue;
 
+        const ehPagamento = valorNum < 0 || desc.toLowerCase().includes('pagamento');
         const regraGlobal = configCartoes['Nubank'] || { fechamento: '3', vencimento: '10', jurosMes: 2.75 };
 
         const dadosNovaConta = {
-          descricao: desc,
+          descricao: ehPagamento ? 'Pagamento de Fatura (Pagamento recebido)' : desc,
           categoria: 'Fatura de Cartão' as const,
-          valor: valorNum,
+          valor: Math.abs(valorNum),
           vencimento: venc,
-          status: 'Pendente' as const,
+          status: ehPagamento ? ('Paga' as const) : ('Pendente' as const),
           fixa: false,
           cartaoOrigem: 'Nubank',
           ehParcelado: false,
           numeroParcelas: 1,
           parcelaAtual: 1,
-          valorParcela: valorNum,
+          valorParcela: Math.abs(valorNum),
           diaFechamento: regraGlobal.fechamento,
           diaVencimento: regraGlobal.vencimento,
           taxaJurosMes: regraGlobal.jurosMes,
@@ -402,7 +402,7 @@ export function PaginaFinancas() {
         itensImportados++;
       }
 
-      alert(`Sucesso! ${itensImportados} despesas foram importadas do arquivo CSV.`);
+      alert(`Sucesso! ${itensImportados} registros foram importados do arquivo CSV.`);
       if (arquivoInputRef.current) {
         arquivoInputRef.current.value = '';
       }
