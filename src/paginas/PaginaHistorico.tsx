@@ -5,7 +5,7 @@
  * -----------------------------------------------------------------------------
  */
 import React, { useEffect, useState, useMemo } from 'react';
-import { collection, onSnapshot, query, orderBy, limit, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit, addDoc, serverTimestamp, setDoc, doc } from 'firebase/firestore';
 import { banco } from '@/firebase';
 import { formatarMoeda } from '@/utils/utilFormato';
 import {
@@ -21,6 +21,7 @@ import {
   Search,
   Filter,
   X,
+  Upload,
 } from 'lucide-react';
 
 interface ProdutoHistorico {
@@ -56,6 +57,7 @@ interface ComparativoProduto {
 export function PaginaHistorico() {
   const [compras, setCompras] = useState<CompraHistorico[]>([]);
   const [compraExpandida, setCompraExpandida] = useState<string | null>(null);
+  const [importando, setImportando] = useState(false);
 
   // --- Estados para os Filtros ---
   const [filtroTexto, setFiltroTexto] = useState('');
@@ -96,6 +98,114 @@ export function PaginaHistorico() {
 
     return () => cancelar();
   }, []);
+
+  // --- Função para processar e importar o CSV de Notas Fiscais ---
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const arquivo = event.target.files?.[0];
+    if (!arquivo) return;
+
+    setImportando(true);
+    const leitor = new FileReader();
+
+    leitor.onload = async (e) => {
+      try {
+        const conteudo = e.target?.result as string;
+        const linhas = conteudo.split('\n');
+        if (linhas.length < 2) {
+          alert('Arquivo CSV vazio ou inválido.');
+          setImportando(false);
+          return;
+        }
+
+        const cabecalho = linhas[0].split(';').map((h) => h.trim());
+        
+        const idxRazao = cabecalho.indexOf('Emitente_RazaoSocial');
+        const idxChave = cabecalho.indexOf('Chave_NFCe');
+        const idxData = cabecalho.indexOf('Data_Emissao');
+        const idxDescricao = cabecalho.indexOf('Item_Descricao');
+        const idxQtd = cabecalho.indexOf('Item_Quantidade');
+        const idxUn = cabecalho.indexOf('Item_UN');
+        const idxPrecoUnit = cabecalho.indexOf('Item_Valor_Unitario');
+        const idxValorTotalItem = cabecalho.indexOf('Item_Valor_Total');
+        const idxNotaTotal = cabecalho.indexOf('Nota_Valor_Total_RS');
+
+        const notasMap: { [chave: string]: any } = {};
+
+        for (let i = 1; i < linhas.length; i++) {
+          const linha = linhas[i].trim();
+          if (!linha) continue;
+
+          const colunas = linha.split(';');
+          if (colunas.length < cabecalho.length) continue;
+
+          const chave = colunas[idxChave] || `nota_${i}`;
+          const mercado = colunas[idxRazao] || 'Estabelecimento Desconhecido';
+          const dataEmissaoCompleta = colunas[idxData] || '';
+          const dataCompra = dataEmissaoCompleta.split(' ')[0] || new Date().toISOString().split('T')[0];
+          
+          const produtoNome = colunas[idxDescricao] || 'Produto';
+          
+          let qtdStr = colunas[idxQtd] || '1';
+          qtdStr = qtdStr.replace(/[^0-9,.-]/g, '').replace(',', '.');
+          const quantidade = parseFloat(qtdStr) || 1;
+
+          const unidade = colunas[idxUn] || 'un';
+
+          const precoUnitStr = (colunas[idxPrecoUnit] || '0').replace('.', '').replace(',', '.');
+          const precoUnitario = parseFloat(precoUnitStr) || 0;
+
+          const subtotalStr = (colunas[idxValorTotalItem] || '0').replace('.', '').replace(',', '.');
+          const subtotal = parseFloat(subtotalStr) || (quantidade * precoUnitario);
+
+          const notaTotalStr = (colunas[idxNotaTotal] || '0').replace('.', '').replace(',', '.');
+          const totalNota = parseFloat(notaTotalStr) || 0;
+
+          if (!notasMap[chave]) {
+            notasMap[chave] = {
+              mercado: mercado,
+              dataCompra: dataCompra,
+              localizacao: '',
+              tetoGasto: 0,
+              totalGasto: totalNota,
+              modo: 'rancho',
+              compradoPor: 'Importação CSV',
+              produtos: [],
+            };
+          }
+
+          notasMap[chave].produtos.push({
+            nome: produtoNome,
+            quantidade: quantidade,
+            unidade: unidade,
+            precoUnitario: precoUnitario,
+            subtotal: subtotal,
+          });
+
+          if (totalNota === 0) {
+            notasMap[chave].totalGasto += subtotal;
+          }
+        }
+
+        let totalImportadas = 0;
+        for (const chave in notasMap) {
+          const dadosNota = notasMap[chave];
+          const docRef = doc(banco, 'historico_compras', chave.replace(/[^a-zA-Z0-9]/g, '_'));
+          await setDoc(docRef, dadosNota, { merge: true });
+          totalImportadas++;
+        }
+
+        alert(`${totalImportadas} nota(s) fiscal(is) importada(s) com sucesso para o histórico!`);
+      } catch (erro) {
+        console.error('Erro ao processar arquivo CSV:', erro);
+        alert('Erro ao processar o arquivo CSV. Verifique o formato.');
+      } finally {
+        setImportando(false);
+        event.target.value = '';
+      }
+    };
+
+    leitor.readAsText(arquivo, 'UTF-8');
+  };
 
   const adicionarDespensaDoHistorico = async (produto: ProdutoHistorico, compra: CompraHistorico) => {
     try {
@@ -158,15 +268,12 @@ export function PaginaHistorico() {
   // --- Lógica de Filtragem do Histórico ---
   const comprasFiltradas = useMemo(() => {
     return compras.filter((compra) => {
-      // Filtro por Estabelecimento (Mercado)
       const matchMercado = filtroMercado
         ? compra.mercado.toLowerCase().includes(filtroMercado.toLowerCase())
         : true;
 
-      // Filtro por Data
       const matchData = filtroData ? compra.dataCompra === filtroData : true;
 
-      // Filtro por Produto (verifica se algum produto da compra contém o texto digitado)
       const matchProduto = filtroTexto
         ? compra.produtos.some((p) => p.nome.toLowerCase().includes(filtroTexto.toLowerCase()))
         : true;
@@ -175,7 +282,7 @@ export function PaginaHistorico() {
     });
   }, [compras, filtroTexto, filtroMercado, filtroData]);
 
-  // Lista única de mercados para preencher um select/opções se desejar
+  // Lista única de mercados preservada do código original
   const listaMercados = useMemo(() => {
     const mercados = new Set(compras.map((c) => c.mercado).filter(Boolean));
     return Array.from(mercados);
@@ -183,14 +290,33 @@ export function PaginaHistorico() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-          <History className="text-teal-600" />
-          Dashboard & Histórico de Compras
-        </h1>
-        <p className="text-slate-500 text-sm mt-1">
-          Acompanhe seus gastos guardados e o comparativo de preços entre compras.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <History className="text-teal-600" />
+            Dashboard & Histórico de Compras
+          </h1>
+          <p className="text-slate-500 text-sm mt-1">
+            Acompanhe seus gastos guardados e o comparativo de preços entre compras.
+          </p>
+        </div>
+
+        {/* Botão de Importação CSV */}
+        <label className={`cursor-pointer inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all shadow-sm ${
+          importando 
+            ? 'bg-slate-200 text-slate-500 cursor-not-allowed' 
+            : 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-600/20'
+        }`}>
+          <Upload size={18} />
+          {importando ? 'Importando...' : 'Importar Nota (CSV)'}
+          <input
+            type="file"
+            accept=".csv"
+            onChange={handleFileUpload}
+            disabled={importando}
+            className="hidden"
+          />
+        </label>
       </div>
 
       {/* --- DASHBOARD: MÓDULO COMPARATIVO --- */}
@@ -248,7 +374,6 @@ export function PaginaHistorico() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Compras Guardadas</h2>
           
-          {/* Botão de Limpar Filtros se houver algo ativo */}
           {(filtroTexto || filtroMercado || filtroData) && (
             <button
               onClick={() => { setFiltroTexto(''); setFiltroMercado(''); setFiltroData(''); }}
